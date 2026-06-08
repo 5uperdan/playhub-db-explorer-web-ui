@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlayHub Stats</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+    <!-- ═══════════════════════════════════════════════════════════
+     UPLOAD SCREEN
+════════════════════════════════════════════════════════════ -->
+    <div id="upload-screen">
+        <div class="hero">
+            <h1>🎴 PlayHub Stats</h1>
+            <p>
+                Upload your local <code>playhub.db</code> file to explore competition results and player match
+                histories.
+                All queries run entirely in your browser — nothing is sent anywhere.
+            </p>
+        </div>
+
+        <div id="drop-zone">
+            <div class="dz-icon">🗄️</div>
+            <p><strong>Click to browse</strong> or drag &amp; drop<br>your <code>playhub.db</code> file here</p>
+            <input type="file" id="file-input" accept=".db">
+        </div>
+
+        <p class="upload-hint">Generate <code>playhub.db</code> locally with the PlayHub Scraper CLI, then upload it
+            here.</p>
+        <div id="upload-error" class="error-msg" style="display:none"></div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
+     APP
+════════════════════════════════════════════════════════════ -->
+    <div id="app">
+        <header>
+            <h1>🎴 PlayHub Stats</h1>
+            <button id="change-db-btn">Change database</button>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="competitions">Competitions</button>
+            <button class="tab-btn" data-tab="players">Players</button>
+            <button class="tab-btn" data-tab="leaderboard">Leaderboard</button>
+            <button class="tab-btn" data-tab="accuracy">Prediction Accuracy</button>
+            <button class="tab-btn" data-tab="tournament">Tournament Report</button>
+            <button class="tab-btn" data-tab="participation">Participation</button>
+            <button class="tab-btn" data-tab="compare">Compare</button>
+        </div>
+
+        <!-- Competitions tab -->
+        <div id="tab-competitions" class="tab-content active">
+            <div class="controls">
+                <input id="comp-filter" type="text" placeholder="Filter by name or venue…" autocomplete="off">
+                <span id="comp-count" class="count-label"></span>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Competition</th>
+                            <th>Venue</th>
+                            <th style="text-align:right">Players</th>
+                            <th>Winner</th>
+                        </tr>
+                    </thead>
+                    <tbody id="comp-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Players tab -->
+        <div id="tab-players" class="tab-content">
+            <div class="controls">
+                <input id="player-filter" type="text" placeholder="Search player name…" autocomplete="off">
+                <span id="player-count" class="count-label"></span>
+            </div>
+            <div id="player-list" class="player-list"></div>
+        </div>
+
+        <!-- Leaderboard tab -->
+        <div id="tab-leaderboard" class="tab-content">
+            <div class="controls">
+                <input id="lb-filter" type="text" placeholder="Filter by player name…" autocomplete="off">
+                <span id="lb-count" class="count-label"></span>
+                <span id="lb-drift" style="font-size:0.8rem;margin-left:1rem"></span>
+                <p style="font-size:0.8rem;color:#64748b;margin:0.4rem 0 0">* Swiss count includes decisive matches only
+                    — draws are not counted.</p>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="text-align:right">Rank</th>
+                            <th>Player</th>
+                            <th style="text-align:right">Delo Rating</th>
+                            <th style="text-align:right" title="Decisive Swiss matches only (draws excluded)">Swiss*
+                            </th>
+                            <th style="text-align:right">KO</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lb-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Prediction Accuracy tab -->
+        <div id="tab-accuracy" class="tab-content">
+            <div id="accuracy-content"></div>
+        </div>
+
+        <!-- Participation tab -->
+        <div id="tab-participation" class="tab-content">
+            <div id="participation-content"></div>
+        </div>
+
+        <!-- Compare tab -->
+        <div id="tab-compare" class="tab-content">
+            <div style="max-width:640px;margin-bottom:1rem">
+                <p style="font-size:0.9rem;color:#64748b;margin-bottom:1rem">
+                    Plot Delo rating history for multiple players on one chart.
+                    Search for a player and click their name to add them. Up to 6 players.
+                </p>
+                <div style="position:relative;max-width:320px;margin-bottom:0.75rem">
+                    <input id="cmp-search" type="text" placeholder="Search player name…" autocomplete="off"
+                        style="width:100%;padding:0.45rem 0.65rem;border:1px solid #e2e8f0;border-radius:6px;font:inherit;font-size:0.9rem;box-sizing:border-box">
+                    <div id="cmp-suggestions"
+                        style="display:none;position:absolute;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+                    </div>
+                </div>
+                <div id="cmp-tags" style="display:flex;flex-wrap:wrap;gap:0.5rem;min-height:1.5rem"></div>
+            </div>
+            <div id="cmp-chart"></div>
+        </div>
+
+        <!-- Tournament Report tab -->
+        <div id="tab-tournament" class="tab-content">
+            <div style="max-width:640px;margin-bottom:1.5rem">
+                <p style="color:#64748b;font-size:0.9rem;margin-bottom:1rem">
+                    Enter a Play Hub event URL to see the full match history for every registered player.
+                    Players not yet in your database are listed by name only.
+                </p>
+                <div class="controls" style="margin-bottom:0.5rem">
+                    <input id="tr-url" type="text" placeholder="https://tcg.ravensburgerplay.com/events/12345"
+                        autocomplete="off" style="max-width:none;flex:1">
+                    <button id="tr-btn"
+                        style="padding:0.5rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:6px;font:inherit;font-size:0.9rem;cursor:pointer;white-space:nowrap;transition:background 0.15s">Load</button>
+                </div>
+                <div id="tr-status" style="font-size:0.85rem;color:#64748b;min-height:1.4rem"></div>
+                <div id="tr-copy-row" style="display:none;margin-top:0.75rem">
+                    <button id="tr-copy-btn"
+                        style="padding:0.4rem 0.875rem;background:#fff;color:#1e293b;border:1px solid #cbd5e1;border-radius:6px;font:inherit;font-size:0.85rem;cursor:pointer;transition:background 0.15s">Copy
+                        all to clipboard</button>
+                    <span id="tr-copy-status" style="font-size:0.8rem;color:#64748b;margin-left:0.75rem"></span>
+                </div>
+            </div>
+            <div id="tr-results" class="player-list"></div>
+        </div>
+
+        <!-- sql.js: SQLite compiled to WebAssembly, runs entirely in-browser -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"></script>
+        <script src="scripts.js"></script>
+</body>
+
+</html>
