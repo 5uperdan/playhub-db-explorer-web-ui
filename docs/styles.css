@@ -354,6 +354,12 @@
             color: #475569;
         }
 
+        /* ── Player tier colours ── */
+        .tier-elite     { color: #7c3aed; }
+        .tier-sub-elite { color: #2563eb; }
+        .tier-excellent { color: #0891b2; }
+        .tier-great     { color: #059669; }
+
         /* ── States ── */
         .empty {
             color: #94a3b8;

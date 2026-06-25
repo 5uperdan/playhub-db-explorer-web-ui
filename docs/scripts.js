@@ -216,15 +216,22 @@
                 return { rating: pr[0].rating, swiss: pr[0].match_count, ko: ko[0]?.c ?? 0, rank: pr[0].rank, total: pr[0].total };
             }
 
-            /**
-             * Build a player card header HTML string.
-             * ratingInfo: result of fetchRatingInfo(), or null.
-             */
+            function getTierClass(rank, total) {
+                if (!rank || !total) return '';
+                const pct = rank / total;
+                if (pct <= 0.02) return 'tier-elite';
+                if (pct <= 0.05) return 'tier-sub-elite';
+                if (pct <= 0.10) return 'tier-excellent';
+                if (pct <= 0.25) return 'tier-great';
+                return '';
+            }
+
             function buildPlayerHeader(name, ratingInfo) {
+                const tierClass = ratingInfo ? getTierClass(ratingInfo.rank, ratingInfo.total) : '';
                 const ratingStr = ratingInfo
                     ? `<span style="font-weight:400;color:#64748b;font-size:0.85rem"> · Delo: ${Number(ratingInfo.rating).toFixed(2)} · ${ordinal(ratingInfo.rank)} of ${ratingInfo.total} · ${ratingInfo.swiss} Swiss, ${ratingInfo.ko} KO</span>`
                     : '';
-                return `<span class="player-name">${esc(name)}${ratingStr}</span>`;
+                return `<span class="player-name${tierClass ? ' ' + tierClass : ''}">${esc(name)}${ratingStr}</span>`;
             }
 
             /**
@@ -409,7 +416,7 @@
                 el.innerHTML = filtered.map(r => `
     <tr>
       <td style="text-align:right;color:#94a3b8">${r.rank}</td>
-      <td><a href="#" data-player-name="${esc(r.name)}" class="player-link">${esc(r.name)}</a></td>
+      <td><a href="#" data-player-name="${esc(r.name)}" class="player-link ${getTierClass(r.rank, allRows.length)}">${esc(r.name)}</a></td>
       <td style="text-align:right;font-variant-numeric:tabular-nums">${Number(r.rating).toFixed(2)}</td>
       <td style="text-align:right;color:#94a3b8">${r.swiss_count}</td>
       <td style="text-align:right;color:#94a3b8">${r.ko_count}</td>
@@ -858,6 +865,50 @@
                 return all;
             }
 
+            function renderStrengthSummary(buckets, totalPlayers) {
+                const el = document.getElementById('tr-strength-summary');
+                const tiers = [
+                    { key: 'elite',     label: 'Elite',     range: 'top 2%',   color: '#7c3aed', bg: '#f5f3ff' },
+                    { key: 'subElite',  label: 'Sub-elite', range: '2–5%',     color: '#2563eb', bg: '#eff6ff' },
+                    { key: 'excellent', label: 'Excellent', range: '5–10%',    color: '#0891b2', bg: '#ecfeff' },
+                    { key: 'great',     label: 'Great',     range: '10–25%',   color: '#059669', bg: '#f0fdf4' },
+                ];
+                const rows = tiers.map(t => {
+                    const names = buckets[t.key];
+                    return `
+                    <div style="display:flex;align-items:baseline;gap:0.6rem;padding:0.45rem 0;border-bottom:1px solid #f1f5f9">
+                      <span style="min-width:120px;font-weight:600;color:${t.color};font-size:0.875rem">${t.label} <span style="font-weight:400;color:#94a3b8;font-size:0.775rem">(${t.range})</span></span>
+                      <span style="font-size:0.875rem;color:#1e293b">${names.length}</span>
+                    </div>`;
+                }).join('');
+
+                el.style.display = '';
+                el.innerHTML = `
+                <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:0.875rem 1rem;max-width:720px">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+                    <span style="font-weight:600;font-size:0.925rem;color:#1e293b">Tournament Strength <span style="font-weight:400;color:#94a3b8;font-size:0.825rem">(${totalPlayers} players)</span></span>
+                    <span>
+                      <button id="tr-strength-copy-btn"
+                        style="padding:0.3rem 0.75rem;background:#fff;color:#1e293b;border:1px solid #cbd5e1;border-radius:6px;font:inherit;font-size:0.8rem;cursor:pointer">Copy</button>
+                      <span id="tr-strength-copy-status" style="font-size:0.8rem;color:#64748b;margin-left:0.5rem"></span>
+                    </span>
+                  </div>
+                  ${rows}
+                </div>`;
+
+                document.getElementById('tr-strength-copy-btn').addEventListener('click', () => {
+                    const lines = [`Tournament Strength (${totalPlayers} players)`];
+                    tiers.forEach(t => {
+                        lines.push(`${t.label} (${t.range}): ${buckets[t.key].length}`);
+                    });
+                    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+                        const st = document.getElementById('tr-strength-copy-status');
+                        st.textContent = 'Copied!';
+                        setTimeout(() => st.textContent = '', 2000);
+                    });
+                });
+            }
+
             document.getElementById('tr-btn').addEventListener('click', async () => {
                 const urlVal = document.getElementById('tr-url').value.trim();
                 const match = urlVal.match(/\/events\/(\d+)/);
@@ -868,6 +919,7 @@
                 const eventId = match[1];
                 const resultsEl = document.getElementById('tr-results');
                 resultsEl.innerHTML = '';
+                document.getElementById('tr-strength-summary').style.display = 'none';
                 trStatus('Fetching registrations…');
                 document.getElementById('tr-btn').disabled = true;
 
@@ -888,6 +940,8 @@
 
                 trStatus(`${registrations.length} players registered. Looking up histories…`);
 
+                const tierBuckets = { elite: [], subElite: [], excellent: [], great: [] };
+
                 const cards = registrations.map(reg => {
                     const user = reg.user ?? {};
                     const phUserId = user.id ?? null;
@@ -907,13 +961,22 @@
                     const inDb = playerRow != null;
                     const name = playerRow ? playerRow.name : displayName;
                     const uuid = playerRow ? playerRow.uuid : null;
+                    const ri = inDb ? fetchRatingInfo(uuid) : null;
+
+                    if (ri) {
+                        const pct = ri.rank / ri.total;
+                        if (pct <= 0.02) tierBuckets.elite.push(name);
+                        else if (pct <= 0.05) tierBuckets.subElite.push(name);
+                        else if (pct <= 0.10) tierBuckets.excellent.push(name);
+                        else if (pct <= 0.25) tierBuckets.great.push(name);
+                    }
 
                     const bodyId = `tr-pbody-${esc(uuid ?? displayName.replace(/\W/g, '_'))}`;
 
                     return `
                     <div class="player-card${inDb ? '' : ' tr-unknown'}" data-uuid="${esc(uuid)}">
                       <div class="player-card-header" onclick="trTogglePlayer(this)">
-                        ${buildPlayerHeader(name, inDb ? fetchRatingInfo(uuid) : null)}
+                        ${buildPlayerHeader(name, ri)}
                         <span class="chevron">${inDb ? '▼' : '—'}</span>
                       </div>
                       <div class="player-card-body" id="${bodyId}">
@@ -931,6 +994,8 @@
                 document.getElementById('tr-copy-row').style.display = foundCount > 0 ? '' : 'none';
                 document.getElementById('tr-copy-status').textContent = '';
                 document.getElementById('tr-btn').disabled = false;
+
+                renderStrengthSummary(tierBuckets, registrations.length);
             });
 
             document.getElementById('tr-copy-btn').addEventListener('click', () => {
