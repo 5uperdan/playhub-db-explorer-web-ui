@@ -213,7 +213,8 @@
                     JOIN rounds r ON r.uuid = m.round_uuid
                     WHERE (m.player_a_uuid = ? OR m.player_b_uuid = ?)
                       AND r.name LIKE 'Top %'`, [playerUuid, playerUuid]);
-                return { rating: pr[0].rating, swiss: pr[0].match_count, ko: ko[0]?.c ?? 0, rank: pr[0].rank, total: pr[0].total };
+                const rank = pr[0].rank, total = pr[0].total;
+                return { rating: pr[0].rating, swiss: pr[0].match_count, ko: ko[0]?.c ?? 0, rank: rank / total <= 1/3 ? rank : null, total };
             }
 
             function getTierClass(rank, total) {
@@ -229,7 +230,7 @@
             function buildPlayerHeader(name, ratingInfo) {
                 const tierClass = ratingInfo ? getTierClass(ratingInfo.rank, ratingInfo.total) : '';
                 const ratingStr = ratingInfo
-                    ? `<span style="font-weight:400;color:#64748b;font-size:0.85rem"> · Delo: ${Number(ratingInfo.rating).toFixed(2)} · ${ordinal(ratingInfo.rank)} of ${ratingInfo.total} · ${ratingInfo.swiss} Swiss, ${ratingInfo.ko} KO</span>`
+                    ? `<span style="font-weight:400;color:#64748b;font-size:0.85rem"> · Delo: ${Number(ratingInfo.rating).toFixed(2)}${ratingInfo.rank != null ? ` · ${ordinal(ratingInfo.rank)} of ${ratingInfo.total}` : ''} · ${ratingInfo.swiss} Swiss, ${ratingInfo.ko} KO</span>`
                     : '';
                 return `<span class="player-name${tierClass ? ' ' + tierClass : ''}">${esc(name)}${ratingStr}</span>`;
             }
@@ -963,7 +964,7 @@
                     const uuid = playerRow ? playerRow.uuid : null;
                     const ri = inDb ? fetchRatingInfo(uuid) : null;
 
-                    if (ri) {
+                    if (ri && ri.rank != null) {
                         const pct = ri.rank / ri.total;
                         if (pct <= 0.02) tierBuckets.elite.push(name);
                         else if (pct <= 0.05) tierBuckets.subElite.push(name);
