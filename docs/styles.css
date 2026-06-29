@@ -383,6 +383,107 @@
             display: none;
         }
 
+        /* ── Head to Head ── */
+        .h2h-summary-box {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1.25rem;
+            max-width: 640px;
+        }
+
+        .h2h-scoreline {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 0.35rem;
+        }
+
+        .h2h-pname {
+            font-weight: 700;
+            font-size: 1rem;
+            flex: 1;
+        }
+
+        .h2h-pname:last-child {
+            text-align: right;
+        }
+
+        .h2h-tally {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #1e293b;
+            white-space: nowrap;
+        }
+
+        .h2h-meta {
+            font-size: 0.8rem;
+            color: #64748b;
+        }
+
+        .h2h-comp {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 0.875rem 1rem;
+            margin-bottom: 0.75rem;
+            max-width: 640px;
+        }
+
+        .h2h-comp-title {
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: 0.2rem;
+        }
+
+        .h2h-comp-link {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-bottom: 0.6rem;
+            word-break: break-all;
+        }
+
+        .h2h-comp-link a {
+            color: #2563eb;
+            text-decoration: none;
+        }
+
+        .h2h-comp-link a:hover {
+            text-decoration: underline;
+        }
+
+        .h2h-matches {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
+
+        .h2h-match-row {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 0.875rem;
+            padding: 0.25rem 0;
+            border-top: 1px solid #f1f5f9;
+        }
+
+        .h2h-match-row:first-child {
+            border-top: none;
+        }
+
+        .h2h-round-name {
+            flex: 1;
+            color: #475569;
+        }
+
+        .h2h-score {
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+            min-width: 2.5rem;
+            text-align: center;
+        }
+
         /* ── Mobile ── */
         @media (max-width: 640px) {
             header {

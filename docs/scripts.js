@@ -1218,6 +1218,147 @@
             }
 
             // ═══════════════════════════════════════════════════════════
+            //  Head to Head tab
+            // ═══════════════════════════════════════════════════════════
+            const h2hState = [null, null]; // [{uuid, name}] per slot
+
+            function h2hSetupInput(inputId, sugId, slot) {
+                const input = document.getElementById(inputId);
+                const sug = document.getElementById(sugId);
+
+                input.addEventListener('input', function () {
+                    if (h2hState[slot]) {
+                        h2hState[slot] = null;
+                        renderH2H();
+                    }
+                    const val = this.value.trim();
+                    if (val.length < 2 || !db) { sug.style.display = 'none'; sug.innerHTML = ''; return; }
+                    const rows = query(
+                        `SELECT uuid, name FROM players WHERE LOWER(name) LIKE ? ORDER BY name LIMIT 6`,
+                        [`%${val.toLowerCase()}%`]
+                    );
+                    if (!rows.length) { sug.style.display = 'none'; sug.innerHTML = ''; return; }
+                    sug.style.display = '';
+                    sug.innerHTML = rows.map(r =>
+                        `<div data-uuid="${esc(r.uuid)}" data-name="${esc(r.name)}"
+                             style="padding:0.35rem 0.65rem;cursor:pointer;font-size:0.875rem;border-bottom:1px solid #f1f5f9"
+                             onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">${esc(r.name)}</div>`
+                    ).join('');
+                });
+
+                sug.addEventListener('mousedown', e => {
+                    const div = e.target.closest('[data-uuid]');
+                    if (!div) return;
+                    e.preventDefault();
+                    input.value = div.dataset.name;
+                    sug.style.display = 'none';
+                    h2hState[slot] = { uuid: div.dataset.uuid, name: div.dataset.name };
+                    renderH2H();
+                });
+
+                document.addEventListener('mousedown', e => {
+                    if (!input.contains(e.target) && !sug.contains(e.target)) sug.style.display = 'none';
+                });
+            }
+
+            function renderH2H() {
+                const summaryEl = document.getElementById('h2h-summary');
+                const resultsEl = document.getElementById('h2h-results');
+
+                if (!h2hState[0] || !h2hState[1]) {
+                    summaryEl.innerHTML = '';
+                    resultsEl.innerHTML = '';
+                    return;
+                }
+
+                const [p1, p2] = h2hState;
+
+                const matches = query(`
+                    SELECT m.player_a_uuid, m.player_b_uuid,
+                           m.player_a_score, m.player_b_score, m.winning_player_uuid,
+                           r.name AS round_name,
+                           c.name AS comp_name, c.start_date, c.ph_event_id,
+                           v.name AS venue_name
+                    FROM matches m
+                    JOIN rounds r ON r.uuid = m.round_uuid
+                    JOIN competitions c ON c.uuid = m.competition_uuid
+                    LEFT JOIN venues v ON v.ph_uuid = c.venue_uuid
+                    WHERE (m.player_a_uuid = ? AND m.player_b_uuid = ?)
+                       OR (m.player_a_uuid = ? AND m.player_b_uuid = ?)
+                    ORDER BY c.start_date ASC, c.uuid ASC
+                `, [p1.uuid, p2.uuid, p2.uuid, p1.uuid]);
+
+                if (!matches.length) {
+                    summaryEl.innerHTML = `<p style="color:#64748b;font-size:0.9rem">No matches found between ${esc(p1.name)} and ${esc(p2.name)}.</p>`;
+                    resultsEl.innerHTML = '';
+                    return;
+                }
+
+                const p1Wins = matches.filter(m => m.winning_player_uuid === p1.uuid).length;
+                const p2Wins = matches.filter(m => m.winning_player_uuid === p2.uuid).length;
+                const draws  = matches.filter(m => m.winning_player_uuid === null).length;
+                const total  = matches.length;
+
+                summaryEl.innerHTML = `
+                    <div class="h2h-summary-box">
+                        <div class="h2h-scoreline">
+                            <span class="h2h-pname" style="color:#2563eb">${esc(p1.name)}</span>
+                            <span class="h2h-tally">${p1Wins} – ${draws} – ${p2Wins}</span>
+                            <span class="h2h-pname" style="color:#ef4444">${esc(p2.name)}</span>
+                        </div>
+                        <div class="h2h-meta">${total} match${total !== 1 ? 'es' : ''} · ${p1Wins} win${p1Wins !== 1 ? 's' : ''} for ${esc(p1.name)} · ${p2Wins} win${p2Wins !== 1 ? 's' : ''} for ${esc(p2.name)}${draws ? ` · ${draws} draw${draws !== 1 ? 's' : ''}` : ''}</div>
+                    </div>`;
+
+                // Group by competition
+                const compMap = new Map();
+                for (const m of matches) {
+                    const key = m.start_date + '|' + (m.ph_event_id ?? m.comp_name);
+                    if (!compMap.has(key)) compMap.set(key, { ...m, items: [] });
+                    compMap.get(key).items.push(m);
+                }
+
+                resultsEl.innerHTML = [...compMap.values()].map(comp => {
+                    comp.items.sort((a, b) => compareRounds(a.round_name, b.round_name));
+
+                    const rows = comp.items.map(m => {
+                        const isP1A   = m.player_a_uuid === p1.uuid;
+                        const p1Score = isP1A ? m.player_a_score : m.player_b_score;
+                        const p2Score = isP1A ? m.player_b_score : m.player_a_score;
+                        const scoreStr = (p1Score != null && p2Score != null) ? `${p1Score}–${p2Score}` : '';
+
+                        let chip;
+                        if (m.winning_player_uuid === null) {
+                            chip = `<span class="badge draw">Draw</span>`;
+                        } else if (m.winning_player_uuid === p1.uuid) {
+                            chip = `<span class="badge win">${esc(p1.name)} wins</span>`;
+                        } else {
+                            chip = `<span class="badge loss">${esc(p2.name)} wins</span>`;
+                        }
+
+                        return `<div class="h2h-match-row">
+                            <span class="h2h-round-name">${esc(m.round_name)}</span>
+                            <span class="h2h-score">${scoreStr}</span>
+                            ${chip}
+                        </div>`;
+                    }).join('');
+
+                    const eventUrl = comp.ph_event_id
+                        ? `https://tcg.ravensburgerplay.com/events/${esc(comp.ph_event_id)}`
+                        : null;
+                    const venueLine = (comp.venue_name ? `${esc(comp.venue_name)}: ` : '') + esc(comp.start_date);
+
+                    return `<div class="h2h-comp">
+                        <div class="h2h-comp-title">${venueLine}</div>
+                        ${eventUrl ? `<div class="h2h-comp-link"><a href="${eventUrl}" target="_blank" rel="noopener">${eventUrl}</a></div>` : ''}
+                        <div class="h2h-matches">${rows}</div>
+                    </div>`;
+                }).join('');
+            }
+
+            h2hSetupInput('h2h-p1', 'h2h-p1-sug', 0);
+            h2hSetupInput('h2h-p2', 'h2h-p2-sug', 1);
+
+            // ═══════════════════════════════════════════════════════════
             //  Round sort helpers
             // ═══════════════════════════════════════════════════════════
             function roundSortKey(name) {

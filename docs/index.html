@@ -53,6 +53,7 @@
             <button class="tab-btn" data-tab="tournament">Tournament Report</button>
             <button class="tab-btn" data-tab="participation">Participation</button>
             <button class="tab-btn" data-tab="compare">Compare</button>
+            <button class="tab-btn" data-tab="h2h">Head to Head</button>
         </div>
 
         <!-- Competitions tab -->
@@ -139,6 +140,30 @@
                 <div id="cmp-tags" style="display:flex;flex-wrap:wrap;gap:0.5rem;min-height:1.5rem"></div>
             </div>
             <div id="cmp-chart"></div>
+        </div>
+
+        <!-- Head to Head tab -->
+        <div id="tab-h2h" class="tab-content">
+            <div style="max-width:640px;margin-bottom:1rem">
+                <p style="font-size:0.9rem;color:#64748b;margin-bottom:1rem">
+                    Search the full match history between two players.
+                </p>
+                <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-bottom:0.75rem">
+                    <div style="position:relative;flex:1;min-width:180px">
+                        <input id="h2h-p1" type="text" placeholder="Player 1…" autocomplete="off"
+                            style="width:100%;box-sizing:border-box;padding:0.45rem 0.65rem;border:1px solid #e2e8f0;border-radius:6px;font:inherit;font-size:0.9rem">
+                        <div id="h2h-p1-sug" style="display:none;position:absolute;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.08)"></div>
+                    </div>
+                    <div style="font-weight:600;color:#94a3b8;flex-shrink:0">vs</div>
+                    <div style="position:relative;flex:1;min-width:180px">
+                        <input id="h2h-p2" type="text" placeholder="Player 2…" autocomplete="off"
+                            style="width:100%;box-sizing:border-box;padding:0.45rem 0.65rem;border:1px solid #e2e8f0;border-radius:6px;font:inherit;font-size:0.9rem">
+                        <div id="h2h-p2-sug" style="display:none;position:absolute;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.08)"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="h2h-summary"></div>
+            <div id="h2h-results"></div>
         </div>
 
         <!-- Tournament Report tab -->
