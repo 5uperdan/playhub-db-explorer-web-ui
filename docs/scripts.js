@@ -387,11 +387,13 @@
                     return;
                 }
 
-                // Apply name filter (preserving global rank numbers)
+                // Apply name filter (preserving global rank numbers; rank null outside top third)
+                const topThird = Math.ceil(allRows.length / 3);
                 const pattern = lbFilter.toLowerCase();
                 const filtered = allRows
-                    .map((r, i) => ({ ...r, rank: i + 1 }))
-                    .filter(r => !pattern || r.name.toLowerCase().includes(pattern));
+                    .map((r, i) => ({ ...r, rank: i < topThird ? i + 1 : null }))
+                    .filter(r => !pattern || r.name.toLowerCase().includes(pattern))
+                    .slice(0, 100);
 
                 if (!filtered.length) {
                     tbody.innerHTML = `<tr><td colspan="5" class="empty">No players match your filter</td></tr>`;
@@ -399,9 +401,10 @@
                     return;
                 }
 
+                const matchCount = allRows.filter(r => !pattern || r.name.toLowerCase().includes(pattern)).length;
                 countEl.textContent = pattern
-                    ? `${filtered.length} of ${allRows.length} players`
-                    : `${allRows.length} players`;
+                    ? `${Math.min(matchCount, 100)}${matchCount > 100 ? '+' : ''} of ${allRows.length} players`
+                    : `Top 100 of ${allRows.length} players`;
 
                 // Zero-sum diagnostic: average rating should be ~1000
                 const avgRating = allRows.reduce((s, r) => s + r.rating, 0) / allRows.length;
@@ -416,7 +419,7 @@
                 const el = document.getElementById('lb-tbody');
                 el.innerHTML = filtered.map(r => `
     <tr>
-      <td style="text-align:right;color:#94a3b8">${r.rank}</td>
+      <td style="text-align:right;color:#94a3b8">${r.rank ?? ''}</td>
       <td><a href="#" data-player-name="${esc(r.name)}" class="player-link ${getTierClass(r.rank, allRows.length)}">${esc(r.name)}</a></td>
       <td style="text-align:right;font-variant-numeric:tabular-nums">${Number(r.rating).toFixed(2)}</td>
       <td style="text-align:right;color:#94a3b8">${r.swiss_count}</td>
