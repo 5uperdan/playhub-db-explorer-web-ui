@@ -1234,8 +1234,8 @@
                     const val = this.value.trim();
                     if (val.length < 2 || !db) { sug.style.display = 'none'; sug.innerHTML = ''; return; }
                     const rows = query(
-                        `SELECT uuid, name FROM players WHERE LOWER(name) LIKE ? ORDER BY name LIMIT 6`,
-                        [`%${val.toLowerCase()}%`]
+                        `SELECT uuid, name FROM players WHERE LOWER(name) = ? ORDER BY name LIMIT 6`,
+                        [val.toLowerCase()]
                     );
                     if (!rows.length) { sug.style.display = 'none'; sug.innerHTML = ''; return; }
                     sug.style.display = '';
