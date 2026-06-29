@@ -123,6 +123,7 @@
                 switchToTab('tournament', () => {
                     document.getElementById('tr-url').value =
                         `https://tcg.ravensburgerplay.com/events/${eventId}`;
+                    clearTournamentReport();
                 });
             }
 
@@ -853,6 +854,13 @@
                 el.style.color = isError ? '#dc2626' : '#64748b';
             }
 
+            function clearTournamentReport() {
+                document.getElementById('tr-results').innerHTML = '';
+                document.getElementById('tr-strength-summary').style.display = 'none';
+                trStatus('');
+                document.getElementById('tr-copy-row').style.display = 'none';
+            }
+
             async function fetchAllRegistrations(eventId) {
                 let page = 1;
                 const all = [];
@@ -912,6 +920,8 @@
                     });
                 });
             }
+
+            document.getElementById('tr-url').addEventListener('input', clearTournamentReport);
 
             document.getElementById('tr-btn').addEventListener('click', async () => {
                 const urlVal = document.getElementById('tr-url').value.trim();
