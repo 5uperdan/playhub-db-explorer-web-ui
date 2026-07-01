@@ -338,12 +338,131 @@
             //  Leaderboard tab
             // ═══════════════════════════════════════════════════════════
             let lbFilter = '';
-            const lbFilterInput = document.getElementById('lb-filter');
+            let lbSort = { col: 'rating', dir: 'desc' };
+            let lbMinEvents = 0, lbMinWins = 0, lbMinFinals = 0, lbMinTopcuts = 0;
+            let lbSetTypeFilter = null; // null = all sets; Set<uuid> = only these sets
+            let lbSetTypesCache = [];   // [{uuid, display_name}] loaded from DB
 
-            lbFilterInput.addEventListener('input', () => {
-                lbFilter = lbFilterInput.value.trim();
+            const lbFilterInput = document.getElementById('lb-filter');
+            lbFilterInput.addEventListener('input', () => { lbFilter = lbFilterInput.value.trim(); renderLeaderboard(); });
+
+            document.getElementById('lb-min-events').addEventListener('input', e => { lbMinEvents = parseInt(e.target.value, 10) || 0; renderLeaderboard(); });
+            document.getElementById('lb-min-wins').addEventListener('input', e => { lbMinWins = parseInt(e.target.value, 10) || 0; renderLeaderboard(); });
+            document.getElementById('lb-min-finals').addEventListener('input', e => { lbMinFinals = parseInt(e.target.value, 10) || 0; renderLeaderboard(); });
+            document.getElementById('lb-min-topcuts').addEventListener('input', e => { lbMinTopcuts = parseInt(e.target.value, 10) || 0; renderLeaderboard(); });
+
+            document.getElementById('lb-thead').addEventListener('click', e => {
+                const th = e.target.closest('th[data-col]');
+                if (!th) return;
+                const col = th.dataset.col;
+                if (lbSort.col === col) {
+                    lbSort.dir = lbSort.dir === 'desc' ? 'asc' : 'desc';
+                } else {
+                    lbSort.col = col;
+                    lbSort.dir = col === 'name' ? 'asc' : 'desc';
+                }
                 renderLeaderboard();
             });
+
+            document.getElementById('lb-settype-row').addEventListener('click', e => {
+                const chip = e.target.closest('.lb-settype-chip');
+                if (!chip) return;
+                const uuid = chip.dataset.uuid;
+                if (uuid === 'all') {
+                    lbSetTypeFilter = null;
+                } else if (lbSetTypeFilter === null) {
+                    lbSetTypeFilter = new Set([uuid]);
+                } else {
+                    if (lbSetTypeFilter.has(uuid)) {
+                        lbSetTypeFilter.delete(uuid);
+                        if (!lbSetTypeFilter.size) lbSetTypeFilter = null;
+                    } else {
+                        lbSetTypeFilter.add(uuid);
+                    }
+                }
+                renderLeaderboard();
+            });
+
+            const LB_COL_LABELS = {
+                rank: 'Rank', name: 'Player', rating: 'Delo Rating', swiss: 'Swiss*',
+                ko: 'KO', events: 'Events', wins: 'Wins', finals: 'Finals', topcuts: 'Top Cuts'
+            };
+            const LB_COL_KEY = {
+                rank: 'rank', name: 'name', rating: 'rating', swiss: 'swiss_count',
+                ko: 'ko_count', events: 'event_count', wins: 'win_count', finals: 'final_count', topcuts: 'topcut_count'
+            };
+
+            function buildLeaderboardSQL(stClause) {
+                return `
+    SELECT pr.rating, pr.match_count AS swiss_count, p.name, p.uuid,
+      COALESCE(ko.ko_count, 0) AS ko_count,
+      COALESCE(ev.event_count, 0) AS event_count,
+      COALESCE(w.win_count, 0) AS win_count,
+      COALESCE(f.final_count, 0) AS final_count,
+      COALESCE(tc.topcut_count, 0) AS topcut_count
+    FROM player_ratings pr
+    JOIN players p ON p.uuid = pr.player_uuid
+    LEFT JOIN (
+      SELECT player_uuid, SUM(cnt) AS ko_count FROM (
+        SELECT m.player_a_uuid AS player_uuid, COUNT(*) AS cnt
+        FROM matches m JOIN rounds r ON r.uuid = m.round_uuid
+        JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE r.name LIKE 'Top %' ${stClause}
+        GROUP BY m.player_a_uuid
+        UNION ALL
+        SELECT m.player_b_uuid AS player_uuid, COUNT(*) AS cnt
+        FROM matches m JOIN rounds r ON r.uuid = m.round_uuid
+        JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE r.name LIKE 'Top %' ${stClause}
+        GROUP BY m.player_b_uuid
+      ) GROUP BY player_uuid
+    ) ko ON ko.player_uuid = pr.player_uuid
+    LEFT JOIN (
+      SELECT player_uuid, COUNT(DISTINCT competition_uuid) AS event_count FROM (
+        SELECT m.player_a_uuid AS player_uuid, m.competition_uuid
+        FROM matches m JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE c.is_complete = 1 ${stClause}
+        UNION ALL
+        SELECT m.player_b_uuid AS player_uuid, m.competition_uuid
+        FROM matches m JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE c.is_complete = 1 ${stClause}
+      ) GROUP BY player_uuid
+    ) ev ON ev.player_uuid = pr.player_uuid
+    LEFT JOIN (
+      SELECT cr.player_uuid, COUNT(*) AS win_count
+      FROM competition_results cr
+      JOIN competitions c ON c.uuid = cr.competition_uuid
+      WHERE cr.position = '1st' ${stClause}
+      GROUP BY cr.player_uuid
+    ) w ON w.player_uuid = pr.player_uuid
+    LEFT JOIN (
+      SELECT player_uuid, COUNT(DISTINCT competition_uuid) AS final_count FROM (
+        SELECT m.player_a_uuid AS player_uuid, m.competition_uuid
+        FROM matches m JOIN rounds r ON r.uuid = m.round_uuid
+        JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE r.name = 'Top 2' ${stClause}
+        UNION ALL
+        SELECT m.player_b_uuid AS player_uuid, m.competition_uuid
+        FROM matches m JOIN rounds r ON r.uuid = m.round_uuid
+        JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE r.name = 'Top 2' ${stClause}
+      ) GROUP BY player_uuid
+    ) f ON f.player_uuid = pr.player_uuid
+    LEFT JOIN (
+      SELECT player_uuid, COUNT(DISTINCT competition_uuid) AS topcut_count FROM (
+        SELECT m.player_a_uuid AS player_uuid, m.competition_uuid
+        FROM matches m JOIN rounds r ON r.uuid = m.round_uuid
+        JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE r.name LIKE 'Top %' ${stClause}
+        UNION ALL
+        SELECT m.player_b_uuid AS player_uuid, m.competition_uuid
+        FROM matches m JOIN rounds r ON r.uuid = m.round_uuid
+        JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE r.name LIKE 'Top %' ${stClause}
+      ) GROUP BY player_uuid
+    ) tc ON tc.player_uuid = pr.player_uuid
+    ORDER BY pr.rating DESC`;
+            }
 
             function renderLeaderboard() {
                 const tbody = document.getElementById('lb-tbody');
@@ -355,56 +474,108 @@
                 ).length > 0;
 
                 if (!tableExists) {
-                    tbody.innerHTML = `<tr><td colspan="5" class="empty">No ratings data found. Run <code>uv run main.py update-ratings</code> and re-upload your database.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="9" class="empty">No ratings data found. Run <code>uv run main.py update-ratings</code> and re-upload your database.</td></tr>`;
                     countEl.textContent = '';
                     return;
                 }
 
-                // Fetch all rated players, join to get names, sorted by rating desc
-                const allRows = query(`
-    SELECT pr.rating, pr.match_count AS swiss_count, p.name, p.uuid,
-      COALESCE(ko.ko_count, 0) AS ko_count
-    FROM player_ratings pr
-    JOIN players p ON p.uuid = pr.player_uuid
-    LEFT JOIN (
-      SELECT player_uuid, SUM(cnt) AS ko_count FROM (
-        SELECT m.player_a_uuid AS player_uuid, COUNT(*) AS cnt
-        FROM matches m JOIN rounds r ON r.uuid = m.round_uuid
-        WHERE r.name LIKE 'Top %'
-        GROUP BY m.player_a_uuid
-        UNION ALL
-        SELECT m.player_b_uuid AS player_uuid, COUNT(*) AS cnt
-        FROM matches m JOIN rounds r ON r.uuid = m.round_uuid
-        WHERE r.name LIKE 'Top %'
-        GROUP BY m.player_b_uuid
-      ) GROUP BY player_uuid
-    ) ko ON ko.player_uuid = pr.player_uuid
-    ORDER BY pr.rating DESC
-  `);
+                // Load/refresh set type chips when DB changes
+                const setTypesExist = query(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='set_championship_types'"
+                ).length > 0;
+                if (setTypesExist) {
+                    const fresh = query('SELECT sct.uuid, sct.display_name FROM set_championship_types sct LEFT JOIN competitions c ON c.set_championship_type_uuid = sct.uuid GROUP BY sct.uuid, sct.display_name ORDER BY MIN(c.start_date) ASC');
+                    if (JSON.stringify(fresh) !== JSON.stringify(lbSetTypesCache)) {
+                        lbSetTypesCache = fresh;
+                        lbSetTypeFilter = null;
+                        const row = document.getElementById('lb-settype-row');
+                        row.style.display = lbSetTypesCache.length ? 'flex' : 'none';
+                        row.innerHTML = lbSetTypesCache.length ? [
+                            `<span class="lb-filter-label">Set:</span>`,
+                            `<button class="lb-settype-chip active" data-uuid="all">All</button>`,
+                            ...lbSetTypesCache.map(st =>
+                                `<button class="lb-settype-chip" data-uuid="${esc(st.uuid)}">${esc(st.display_name)}</button>`)
+                        ].join('') : '';
+                    } else {
+                        // Keep chip active states in sync with lbSetTypeFilter
+                        document.querySelectorAll('#lb-settype-row .lb-settype-chip').forEach(chip => {
+                            const isAll = chip.dataset.uuid === 'all';
+                            chip.classList.toggle('active',
+                                isAll ? lbSetTypeFilter === null : lbSetTypeFilter?.has(chip.dataset.uuid) ?? false);
+                        });
+                    }
+                }
+
+                const lbSetTypeNote = document.getElementById('lb-settype-note');
+                if (lbSetTypeNote) lbSetTypeNote.style.display = lbSetTypeFilter ? '' : 'none';
+
+                // Build set type SQL clause (UUIDs are internal DB values, safe to inline)
+                const stClause = lbSetTypeFilter
+                    ? `AND c.set_championship_type_uuid IN (${[...lbSetTypeFilter].map(u => `'${u}'`).join(',')})`
+                    : '';
+
+                // Fetch all rated players with extended stats, sorted by rating desc
+                const allRows = query(buildLeaderboardSQL(stClause));
 
                 if (!allRows.length) {
-                    tbody.innerHTML = `<tr><td colspan="5" class="empty">No ratings found. Run <code>uv run main.py update-ratings</code> and re-upload your database.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="9" class="empty">No ratings found. Run <code>uv run main.py update-ratings</code> and re-upload your database.</td></tr>`;
                     countEl.textContent = '';
                     return;
                 }
 
-                // Apply name filter (preserving global rank numbers; rank null outside top third)
+                // Preserve original Delo-based rank for tier colouring (top third of full pool)
                 const topThird = Math.ceil(allRows.length / 3);
-                const pattern = lbFilter.toLowerCase();
-                const filtered = allRows
-                    .map((r, i) => ({ ...r, rank: i < topThird ? i + 1 : null }))
-                    .filter(r => !pattern || r.name.toLowerCase().includes(pattern))
-                    .slice(0, 100);
+                const rowsWithDeloRank = allRows.map((r, i) => ({ ...r, deloRank: i < topThird ? i + 1 : null }));
 
-                if (!filtered.length) {
-                    tbody.innerHTML = `<tr><td colspan="5" class="empty">No players match your filter</td></tr>`;
+                // Apply min-value filters (name filter excluded — it doesn't affect rank numbers)
+                // When a set type filter is active, also hide players with no events in those sets
+                const pattern = lbFilter.toLowerCase();
+                let baseFiltered = rowsWithDeloRank.filter(r =>
+                    (!lbSetTypeFilter || r.event_count > 0) &&
+                    r.event_count >= lbMinEvents &&
+                    r.win_count >= lbMinWins &&
+                    r.final_count >= lbMinFinals &&
+                    r.topcut_count >= lbMinTopcuts
+                );
+
+                // Apply sort with Delo desc then alpha as tiebreakers
+                const sortKey = LB_COL_KEY[lbSort.col];
+                baseFiltered = [...baseFiltered].sort((a, b) => {
+                    let va = a[sortKey], vb = b[sortKey];
+                    if (lbSort.col === 'name') {
+                        va = (va ?? '').toLowerCase();
+                        vb = (vb ?? '').toLowerCase();
+                        const cmp = lbSort.dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+                        if (cmp !== 0) return cmp;
+                    } else {
+                        if (va == null) va = lbSort.dir === 'asc' ? Infinity : -Infinity;
+                        if (vb == null) vb = lbSort.dir === 'asc' ? Infinity : -Infinity;
+                        const cmp = lbSort.dir === 'asc' ? va - vb : vb - va;
+                        if (cmp !== 0) return cmp;
+                        // Tiebreak: Delo desc
+                        const deloCmp = b.rating - a.rating;
+                        if (deloCmp !== 0) return deloCmp;
+                    }
+                    // Final tiebreak: alphabetical
+                    return a.name.localeCompare(b.name);
+                });
+
+                // Assign ranks over the non-name-filtered population so name search doesn't renumber
+                const ranked = baseFiltered.map((r, i) => ({ ...r, rank: r.deloRank != null ? i + 1 : null }));
+
+                // Now apply name filter for display only
+                const display = (pattern ? ranked.filter(r => r.name.toLowerCase().includes(pattern)) : ranked).slice(0, 100);
+
+                if (!display.length) {
+                    tbody.innerHTML = `<tr><td colspan="9" class="empty">No players match your filter</td></tr>`;
                     countEl.textContent = '';
                     return;
                 }
 
-                const matchCount = allRows.filter(r => !pattern || r.name.toLowerCase().includes(pattern)).length;
-                countEl.textContent = pattern
-                    ? `${Math.min(matchCount, 100)}${matchCount > 100 ? '+' : ''} of ${allRows.length} players`
+                const visibleCount = pattern ? ranked.filter(r => r.name.toLowerCase().includes(pattern)).length : ranked.length;
+                const hasFilter = pattern || lbMinEvents || lbMinWins || lbMinFinals || lbMinTopcuts;
+                countEl.textContent = hasFilter
+                    ? `${Math.min(visibleCount, 100)}${visibleCount > 100 ? '+' : ''} of ${allRows.length} players`
                     : `Top 100 of ${allRows.length} players`;
 
                 // Zero-sum diagnostic: average rating should be ~1000
@@ -417,17 +588,27 @@
                     driftEl.style.color = driftColour;
                 }
 
-                const el = document.getElementById('lb-tbody');
-                el.innerHTML = filtered.map(r => `
+                // Update sort indicators in column headers
+                document.querySelectorAll('#lb-thead th[data-col]').forEach(th => {
+                    const col = th.dataset.col;
+                    const arrow = lbSort.col === col ? (lbSort.dir === 'desc' ? ' ▼' : ' ▲') : '';
+                    th.textContent = LB_COL_LABELS[col] + arrow;
+                });
+
+                tbody.innerHTML = display.map(r => `
     <tr>
       <td style="text-align:right;color:#94a3b8">${r.rank ?? ''}</td>
-      <td><a href="#" data-player-name="${esc(r.name)}" class="player-link ${getTierClass(r.rank, allRows.length)}">${esc(r.name)}</a></td>
+      <td><a href="#" data-player-name="${esc(r.name)}" class="player-link ${getTierClass(r.deloRank, allRows.length)}">${esc(r.name)}</a></td>
       <td style="text-align:right;font-variant-numeric:tabular-nums">${Number(r.rating).toFixed(2)}</td>
       <td style="text-align:right;color:#94a3b8">${r.swiss_count}</td>
       <td style="text-align:right;color:#94a3b8">${r.ko_count}</td>
+      <td style="text-align:right">${r.event_count}</td>
+      <td style="text-align:right">${r.win_count}</td>
+      <td style="text-align:right">${r.final_count}</td>
+      <td style="text-align:right">${r.topcut_count}</td>
     </tr>
   `).join('');
-                el.querySelectorAll('a.player-link').forEach(a => {
+                tbody.querySelectorAll('a.player-link').forEach(a => {
                     a.addEventListener('click', e => { e.preventDefault(); goToPlayer(a.dataset.playerName); });
                 });
             }

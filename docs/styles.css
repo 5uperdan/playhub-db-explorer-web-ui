@@ -208,6 +208,78 @@
             white-space: nowrap;
         }
 
+        /* ── Leaderboard controls ── */
+        .lb-controls {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+        .lb-controls-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        .lb-drift {
+            font-size: 0.8rem;
+        }
+        .lb-filter-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #94a3b8;
+        }
+        .lb-filter-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.85rem;
+            color: #475569;
+            background: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 0.2rem 0.5rem 0.2rem 0.6rem;
+            cursor: default;
+            white-space: nowrap;
+        }
+        .lb-controls-row input[type="number"] {
+            flex: none;
+            max-width: 3rem;
+            width: 3rem;
+            padding: 0.15rem 0.25rem;
+            text-align: center;
+            font-size: 0.85rem;
+            border-radius: 4px;
+        }
+        .controls-note {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin: 0;
+        }
+        .lb-settype-chip {
+            display: inline-flex;
+            align-items: center;
+            font-size: 0.8rem;
+            color: #64748b;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 99px;
+            padding: 0.2rem 0.7rem;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.12s, color 0.12s, border-color 0.12s;
+        }
+        .lb-settype-chip:hover {
+            background: #e2e8f0;
+            border-color: #cbd5e1;
+        }
+        .lb-settype-chip.active {
+            background: #2563eb;
+            color: #fff;
+            border-color: #2563eb;
+        }
+
         /* ── Table ── */
         .table-wrap {
             overflow-x: auto;
