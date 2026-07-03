@@ -209,13 +209,8 @@
                       (SELECT COUNT(*) FROM player_ratings) AS total
                     FROM player_ratings pr WHERE pr.player_uuid = ?`, [playerUuid]);
                 if (!pr.length) return null;
-                const ko = query(`
-                    SELECT COUNT(*) AS c FROM matches m
-                    JOIN rounds r ON r.uuid = m.round_uuid
-                    WHERE (m.player_a_uuid = ? OR m.player_b_uuid = ?)
-                      AND r.name LIKE 'Top %'`, [playerUuid, playerUuid]);
                 const rank = pr[0].rank, total = pr[0].total;
-                return { rating: pr[0].rating, swiss: pr[0].match_count, ko: ko[0]?.c ?? 0, rank: rank / total <= 1/3 ? rank : null, total };
+                return { rating: pr[0].rating, matches: pr[0].match_count, rank: rank / total <= 1/3 ? rank : null, total };
             }
 
             function getTierClass(rank, total) {
@@ -231,7 +226,7 @@
             function buildPlayerHeader(name, ratingInfo) {
                 const tierClass = ratingInfo ? getTierClass(ratingInfo.rank, ratingInfo.total) : '';
                 const ratingStr = ratingInfo
-                    ? `<span style="font-weight:400;color:#64748b;font-size:0.85rem"> · Delo: ${Number(ratingInfo.rating).toFixed(2)}${ratingInfo.rank != null ? ` · ${ordinal(ratingInfo.rank)} of ${ratingInfo.total}` : ''} · ${ratingInfo.swiss} Swiss, ${ratingInfo.ko} KO</span>`
+                    ? `<span style="font-weight:400;color:#64748b;font-size:0.85rem"> · Delo: ${Number(ratingInfo.rating).toFixed(2)}${ratingInfo.rank != null ? ` · ${ordinal(ratingInfo.rank)} of ${ratingInfo.total}` : ''} · ${ratingInfo.matches} matches</span>`
                     : '';
                 return `<span class="player-name${tierClass ? ' ' + tierClass : ''}">${esc(name)}${ratingStr}</span>`;
             }
@@ -394,7 +389,8 @@
 
             function buildLeaderboardSQL(stClause) {
                 return `
-    SELECT pr.rating, pr.match_count AS swiss_count, p.name, p.uuid,
+    SELECT pr.rating, p.name, p.uuid,
+      COALESCE(sw.swiss_count, 0) AS swiss_count,
       COALESCE(ko.ko_count, 0) AS ko_count,
       COALESCE(ev.event_count, 0) AS event_count,
       COALESCE(w.win_count, 0) AS win_count,
@@ -402,6 +398,21 @@
       COALESCE(tc.topcut_count, 0) AS topcut_count
     FROM player_ratings pr
     JOIN players p ON p.uuid = pr.player_uuid
+    LEFT JOIN (
+      SELECT player_uuid, SUM(cnt) AS swiss_count FROM (
+        SELECT m.player_a_uuid AS player_uuid, COUNT(*) AS cnt
+        FROM matches m JOIN rounds r ON r.uuid = m.round_uuid
+        JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE r.name NOT LIKE 'Top %' AND m.winning_player_uuid IS NOT NULL ${stClause}
+        GROUP BY m.player_a_uuid
+        UNION ALL
+        SELECT m.player_b_uuid AS player_uuid, COUNT(*) AS cnt
+        FROM matches m JOIN rounds r ON r.uuid = m.round_uuid
+        JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE r.name NOT LIKE 'Top %' AND m.winning_player_uuid IS NOT NULL ${stClause}
+        GROUP BY m.player_b_uuid
+      ) GROUP BY player_uuid
+    ) sw ON sw.player_uuid = pr.player_uuid
     LEFT JOIN (
       SELECT player_uuid, SUM(cnt) AS ko_count FROM (
         SELECT m.player_a_uuid AS player_uuid, COUNT(*) AS cnt
