@@ -19,8 +19,13 @@
             <p>
                 Upload your local <code>playhub.db</code> file to explore competition results and player match
                 histories.
-                <a href="https://github.com/5uperdan/playhub-db-latest">Full db link</a>
-                <a href="https://github.com/5uperdan/playhub-db-latest-partial-anon">More likely, you have partial
+            </p>
+            <p>
+                <a href="https://github.com/5uperdan/playhub-db-latest/blob/main/playhub.db">Full db link</a>
+            </p>
+            <p>
+                <a href="https://github.com/5uperdan/playhub-db-latest-partial-anon/blob/main/playhub.db">More likely,
+                    you have partial
                     permission</a>
             </p>
         </div>
@@ -96,14 +101,19 @@
                 </div>
                 <div class="lb-controls-row">
                     <span class="lb-filter-label">Min:</span>
-                    <label class="lb-filter-chip">Events <input id="lb-min-events" type="number" min="0" value="0"></label>
+                    <label class="lb-filter-chip">Events <input id="lb-min-events" type="number" min="0"
+                            value="0"></label>
                     <label class="lb-filter-chip">Wins <input id="lb-min-wins" type="number" min="0" value="0"></label>
-                    <label class="lb-filter-chip">Finals <input id="lb-min-finals" type="number" min="0" value="0"></label>
-                    <label class="lb-filter-chip">Top cuts <input id="lb-min-topcuts" type="number" min="0" value="0"></label>
+                    <label class="lb-filter-chip">Finals <input id="lb-min-finals" type="number" min="0"
+                            value="0"></label>
+                    <label class="lb-filter-chip">Top cuts <input id="lb-min-topcuts" type="number" min="0"
+                            value="0"></label>
                 </div>
                 <div id="lb-settype-row" class="lb-controls-row" style="display:none"></div>
-                <p id="lb-settype-note" class="controls-note" style="display:none;color:#92400e">Set filter applies to Events, Wins, Finals, Top Cuts and KO columns only — Delo rating is always global.</p>
-                <p class="controls-note">* Swiss count includes decisive matches only — draws are not counted. Click column headers to sort.</p>
+                <p id="lb-settype-note" class="controls-note" style="display:none;color:#92400e">Set filter applies to
+                    Events, Wins, Finals, Top Cuts and KO columns only — Delo rating is always global.</p>
+                <p class="controls-note">* Swiss count includes decisive matches only — draws are not counted. Click
+                    column headers to sort.</p>
             </div>
             <div class="table-wrap">
                 <table>
@@ -112,12 +122,17 @@
                             <th data-col="rank" style="text-align:right;cursor:pointer">Rank</th>
                             <th data-col="name" style="cursor:pointer">Player</th>
                             <th data-col="rating" style="text-align:right;cursor:pointer">Delo Rating</th>
-                            <th data-col="swiss" style="text-align:right;cursor:pointer" title="Decisive Swiss matches only (draws excluded)">Swiss*</th>
+                            <th data-col="swiss" style="text-align:right;cursor:pointer"
+                                title="Decisive Swiss matches only (draws excluded)">Swiss*</th>
                             <th data-col="ko" style="text-align:right;cursor:pointer">KO</th>
-                            <th data-col="events" style="text-align:right;cursor:pointer" title="Completed events with at least one match played">Events</th>
-                            <th data-col="wins" style="text-align:right;cursor:pointer" title="Events won (1st place)">Wins</th>
-                            <th data-col="finals" style="text-align:right;cursor:pointer" title="Events reaching Top 2">Finals</th>
-                            <th data-col="topcuts" style="text-align:right;cursor:pointer" title="Events reaching any knockout round">Top Cuts</th>
+                            <th data-col="events" style="text-align:right;cursor:pointer"
+                                title="Completed events with at least one match played">Events</th>
+                            <th data-col="wins" style="text-align:right;cursor:pointer" title="Events won (1st place)">
+                                Wins</th>
+                            <th data-col="finals" style="text-align:right;cursor:pointer" title="Events reaching Top 2">
+                                Finals</th>
+                            <th data-col="topcuts" style="text-align:right;cursor:pointer"
+                                title="Events reaching any knockout round">Top Cuts</th>
                         </tr>
                     </thead>
                     <tbody id="lb-tbody"></tbody>
@@ -159,13 +174,17 @@
                     <div style="position:relative;flex:1;min-width:180px">
                         <input id="h2h-p1" type="text" placeholder="Player 1…" autocomplete="off"
                             style="width:100%;box-sizing:border-box;padding:0.45rem 0.65rem;border:1px solid #e2e8f0;border-radius:6px;font:inherit;font-size:0.9rem">
-                        <div id="h2h-p1-sug" style="display:none;position:absolute;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.08)"></div>
+                        <div id="h2h-p1-sug"
+                            style="display:none;position:absolute;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+                        </div>
                     </div>
                     <div style="font-weight:600;color:#94a3b8;flex-shrink:0">vs</div>
                     <div style="position:relative;flex:1;min-width:180px">
                         <input id="h2h-p2" type="text" placeholder="Player 2…" autocomplete="off"
                             style="width:100%;box-sizing:border-box;padding:0.45rem 0.65rem;border:1px solid #e2e8f0;border-radius:6px;font:inherit;font-size:0.9rem">
-                        <div id="h2h-p2-sug" style="display:none;position:absolute;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.08)"></div>
+                        <div id="h2h-p2-sug"
+                            style="display:none;position:absolute;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+                        </div>
                     </div>
                 </div>
             </div>
