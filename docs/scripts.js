@@ -665,6 +665,90 @@
             // ═══════════════════════════════════════════════════════════
             //  Participation tab
             // ═══════════════════════════════════════════════════════════
+            let partMinEvents = 0, partMinWins = 0, partMinFinals = 0, partMinTopcuts = 0;
+            let partSetTypeFilter = null; // null = all sets; Set<uuid> = only these sets
+            let partSetTypesCache = [];   // [{uuid, display_name}] loaded from DB
+
+            document.getElementById('part-min-events').addEventListener('input', e => { partMinEvents = parseInt(e.target.value, 10) || 0; renderParticipation(); });
+            document.getElementById('part-min-wins').addEventListener('input', e => { partMinWins = parseInt(e.target.value, 10) || 0; renderParticipation(); });
+            document.getElementById('part-min-finals').addEventListener('input', e => { partMinFinals = parseInt(e.target.value, 10) || 0; renderParticipation(); });
+            document.getElementById('part-min-topcuts').addEventListener('input', e => { partMinTopcuts = parseInt(e.target.value, 10) || 0; renderParticipation(); });
+
+            document.getElementById('part-settype-row').addEventListener('click', e => {
+                const chip = e.target.closest('.lb-settype-chip');
+                if (!chip) return;
+                const uuid = chip.dataset.uuid;
+                if (uuid === 'all') {
+                    partSetTypeFilter = null;
+                } else if (partSetTypeFilter === null) {
+                    partSetTypeFilter = new Set([uuid]);
+                } else {
+                    if (partSetTypeFilter.has(uuid)) {
+                        partSetTypeFilter.delete(uuid);
+                        if (!partSetTypeFilter.size) partSetTypeFilter = null;
+                    } else {
+                        partSetTypeFilter.add(uuid);
+                    }
+                }
+                renderParticipation();
+            });
+
+            // Per-player event/win/final/topcut counts scoped to stClause (same shape as
+            // buildLeaderboardSQL's subqueries, but rooted at attendance rather than
+            // player_ratings so it works even without a ratings table, and only includes
+            // players who attended at least one event in scope).
+            function buildParticipationPlayerStatsSQL(stClause) {
+                return `
+    SELECT ev.player_uuid AS uuid, ev.event_count,
+      COALESCE(w.win_count, 0) AS win_count,
+      COALESCE(f.final_count, 0) AS final_count,
+      COALESCE(tc.topcut_count, 0) AS topcut_count
+    FROM (
+      SELECT player_uuid, COUNT(DISTINCT competition_uuid) AS event_count FROM (
+        SELECT m.player_a_uuid AS player_uuid, m.competition_uuid
+        FROM matches m JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE c.is_complete = 1 ${stClause}
+        UNION ALL
+        SELECT m.player_b_uuid AS player_uuid, m.competition_uuid
+        FROM matches m JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE c.is_complete = 1 ${stClause}
+      ) GROUP BY player_uuid
+    ) ev
+    LEFT JOIN (
+      SELECT cr.player_uuid, COUNT(*) AS win_count
+      FROM competition_results cr
+      JOIN competitions c ON c.uuid = cr.competition_uuid
+      WHERE cr.position = '1st' ${stClause}
+      GROUP BY cr.player_uuid
+    ) w ON w.player_uuid = ev.player_uuid
+    LEFT JOIN (
+      SELECT player_uuid, COUNT(DISTINCT competition_uuid) AS final_count FROM (
+        SELECT m.player_a_uuid AS player_uuid, m.competition_uuid
+        FROM matches m JOIN rounds r ON r.uuid = m.round_uuid
+        JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE r.name = 'Top 2' ${stClause}
+        UNION ALL
+        SELECT m.player_b_uuid AS player_uuid, m.competition_uuid
+        FROM matches m JOIN rounds r ON r.uuid = m.round_uuid
+        JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE r.name = 'Top 2' ${stClause}
+      ) GROUP BY player_uuid
+    ) f ON f.player_uuid = ev.player_uuid
+    LEFT JOIN (
+      SELECT player_uuid, COUNT(DISTINCT competition_uuid) AS topcut_count FROM (
+        SELECT m.player_a_uuid AS player_uuid, m.competition_uuid
+        FROM matches m JOIN rounds r ON r.uuid = m.round_uuid
+        JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE r.name LIKE 'Top %' ${stClause}
+        UNION ALL
+        SELECT m.player_b_uuid AS player_uuid, m.competition_uuid
+        FROM matches m JOIN rounds r ON r.uuid = m.round_uuid
+        JOIN competitions c ON c.uuid = m.competition_uuid
+        WHERE r.name LIKE 'Top %' ${stClause}
+      ) GROUP BY player_uuid
+    ) tc ON tc.player_uuid = ev.player_uuid`;
+            }
+
             function renderParticipation() {
                 const container = document.getElementById('participation-content');
 
@@ -677,36 +761,93 @@
                     return;
                 }
 
-                const setTypes = query(`
-                    SELECT sct.uuid, sct.display_name,
-                        COUNT(DISTINCT c.uuid) AS num_events,
-                        COUNT(cr.player_uuid) AS total_entries,
-                        COUNT(DISTINCT cr.player_uuid) AS unique_players
-                    FROM set_championship_types sct
-                    LEFT JOIN competitions c
-                        ON c.set_championship_type_uuid = sct.uuid
-                        AND EXISTS (SELECT 1 FROM matches m WHERE m.competition_uuid = c.uuid)
-                    LEFT JOIN competition_results cr ON cr.competition_uuid = c.uuid
-                    GROUP BY sct.uuid, sct.display_name
-                    ORDER BY MIN(c.start_date) ASC
-                `);
+                // Load/refresh set type chips when DB changes (mirrors the Leaderboard tab)
+                const fresh = query('SELECT sct.uuid, sct.display_name FROM set_championship_types sct LEFT JOIN competitions c ON c.set_championship_type_uuid = sct.uuid GROUP BY sct.uuid, sct.display_name ORDER BY MIN(c.start_date) ASC');
+                if (JSON.stringify(fresh) !== JSON.stringify(partSetTypesCache)) {
+                    partSetTypesCache = fresh;
+                    partSetTypeFilter = null;
+                    const row = document.getElementById('part-settype-row');
+                    row.style.display = partSetTypesCache.length ? 'flex' : 'none';
+                    row.innerHTML = partSetTypesCache.length ? [
+                        `<span class="lb-filter-label">Set:</span>`,
+                        `<button class="lb-settype-chip active" data-uuid="all">All</button>`,
+                        ...partSetTypesCache.map(st =>
+                            `<button class="lb-settype-chip" data-uuid="${esc(st.uuid)}">${esc(st.display_name)}</button>`)
+                    ].join('') : '';
+                } else {
+                    document.querySelectorAll('#part-settype-row .lb-settype-chip').forEach(chip => {
+                        const isAll = chip.dataset.uuid === 'all';
+                        chip.classList.toggle('active',
+                            isAll ? partSetTypeFilter === null : partSetTypeFilter?.has(chip.dataset.uuid) ?? false);
+                    });
+                }
 
-                if (!setTypes.length) {
+                if (!partSetTypesCache.length) {
                     container.innerHTML = `<div class="empty" style="padding:3rem">No set championship types registered.</div>`;
                     return;
                 }
 
-                const rows = setTypes.map(st => {
-                    const s = { num_events: st.num_events, total_entries: st.total_entries, unique_players: st.unique_players };
-                    return `<tr>
+                const stClause = partSetTypeFilter
+                    ? `AND c.set_championship_type_uuid IN (${[...partSetTypeFilter].map(u => `'${u}'`).join(',')})`
+                    : '';
+
+                // Qualifying players: attended >=1 event in the selected set(s) and meet
+                // every Min threshold, computed the same way Leaderboard's filters do.
+                const playerStats = query(buildParticipationPlayerStatsSQL(stClause));
+                const hasMinFilter = partMinEvents || partMinWins || partMinFinals || partMinTopcuts;
+                const qualifying = playerStats.filter(p =>
+                    p.event_count >= partMinEvents &&
+                    p.win_count >= partMinWins &&
+                    p.final_count >= partMinFinals &&
+                    p.topcut_count >= partMinTopcuts
+                );
+
+                // Only restrict competition_results to qualifying players when a filter is
+                // actually active — with no filters, every attendee already qualifies, and
+                // skipping the restriction avoids building a huge IN-list for the common case.
+                const qualifyingClause = (hasMinFilter && qualifying.length)
+                    ? `AND cr.player_uuid IN (${qualifying.map(p => `'${p.uuid}'`).join(',')})`
+                    : hasMinFilter ? `AND 1=0` : '';
+
+                const displayedTypes = partSetTypeFilter
+                    ? partSetTypesCache.filter(st => partSetTypeFilter.has(st.uuid))
+                    : partSetTypesCache;
+
+                const setTypes = displayedTypes.map(st => {
+                    // EXISTS (not a JOIN) for the "has match data" check — joining `matches`
+                    // directly would fan out competition_results rows by match count and
+                    // wildly inflate total_entries.
+                    const row = query(`
+                        SELECT
+                            COUNT(DISTINCT c.uuid) AS num_events,
+                            COUNT(cr.player_uuid) AS total_entries,
+                            COUNT(DISTINCT cr.player_uuid) AS unique_players
+                        FROM competitions c
+                        LEFT JOIN competition_results cr ON cr.competition_uuid = c.uuid ${qualifyingClause}
+                        WHERE c.set_championship_type_uuid = ?
+                          AND EXISTS (SELECT 1 FROM matches m WHERE m.competition_uuid = c.uuid)
+                    `, [st.uuid])[0];
+                    return { display_name: st.display_name, ...row };
+                });
+
+                if (!setTypes.length) {
+                    container.innerHTML = `<div class="empty" style="padding:3rem">No set championship types match the current filters.</div>`;
+                    return;
+                }
+
+                const rows = setTypes.map(st => `<tr>
                         <td>${esc(st.display_name)}</td>
-                        <td style="text-align:right">${s.num_events}</td>
-                        <td style="text-align:right">${s.total_entries}</td>
-                        <td style="text-align:right">${s.unique_players}</td>
-                    </tr>`;
-                }).join('');
+                        <td style="text-align:right">${st.num_events}</td>
+                        <td style="text-align:right">${st.total_entries}</td>
+                        <td style="text-align:right">${st.unique_players}</td>
+                    </tr>`).join('');
+
+                const countNote = hasMinFilter
+                    ? `<span class="count-label">${qualifying.length} of ${playerStats.length} attendees meet the filters</span>`
+                    : `<span class="count-label">${playerStats.length} attendees</span>`;
 
                 container.innerHTML = `
+                <div style="margin-bottom:0.5rem">${countNote}</div>
                 <div class="table-wrap">
                     <table>
                         <thead><tr>
@@ -717,7 +858,111 @@
                         </tr></thead>
                         <tbody>${rows}</tbody>
                     </table>
-                </div>`;
+                </div>
+                <div style="margin-top:1.5rem">${renderAttendanceBreakdown(qualifying)}</div>`;
+            }
+
+            // ── Attendance breakdown: bar chart (exact event count) + cumulative line
+            // graph (at least N events), for the given set of {event_count} rows.
+            function renderAttendanceBreakdown(players) {
+                if (!players.length) {
+                    return `<div class="empty" style="padding:2rem">No attendees match the current filters.</div>`;
+                }
+
+                const maxEvents = Math.max(...players.map(p => p.event_count));
+                const exactCounts = Array.from({ length: maxEvents }, (_, i) => {
+                    const n = i + 1;
+                    return players.filter(p => p.event_count === n).length;
+                });
+                const atLeastCounts = exactCounts.map((_, i) =>
+                    exactCounts.slice(i).reduce((a, b) => a + b, 0)
+                );
+
+                const barChart = renderAttendanceBarChart(exactCounts, maxEvents);
+                const lineChart = renderAttendanceLineChart(atLeastCounts, maxEvents);
+
+                return `
+                <h3 style="font-size:0.95rem;font-weight:600;margin-bottom:0.25rem">Attendance breakdown</h3>
+                <p class="controls-note" style="margin-bottom:0.75rem">Number of players who attended exactly N events (bar chart), and how many attended at least N events (line graph below).</p>
+                ${barChart}
+                ${lineChart}`;
+            }
+
+            function renderAttendanceBarChart(exactCounts, maxEvents) {
+                const svgW = 720, svgH = 260;
+                const mL = 45, mR = 15, mT = 15, mB = 34;
+                const plotW = svgW - mL - mR;
+                const plotH = svgH - mT - mB;
+                const maxCount = Math.max(...exactCounts, 1);
+                const n = exactCounts.length;
+                const barGap = 2;
+                const barW = Math.max(1, plotW / n - barGap);
+
+                const yPos = c => mT + plotH * (1 - c / maxCount);
+                const xPos = i => mL + (i * plotW / n);
+
+                let inner = '';
+                for (let i = 0; i <= 4; i++) {
+                    const c = maxCount * i / 4;
+                    const y = yPos(c).toFixed(1);
+                    inner += `<line x1="${mL}" y1="${y}" x2="${mL + plotW}" y2="${y}" stroke="#f1f5f9" stroke-width="1"/>`;
+                    inner += `<text x="${mL - 6}" y="${+y + 4}" text-anchor="end" font-size="10" fill="#94a3b8">${Math.round(c)}</text>`;
+                }
+
+                for (let i = 0; i < n; i++) {
+                    const count = exactCounts[i];
+                    const x = xPos(i).toFixed(1);
+                    const y = yPos(count).toFixed(1);
+                    const h = (plotH - (yPos(count) - mT)).toFixed(1);
+                    if (count > 0) {
+                        inner += `<rect x="${x}" y="${y}" width="${barW.toFixed(1)}" height="${h}" fill="#3b82f6" fill-opacity="0.85"><title>${i + 1} event${i === 0 ? '' : 's'}: ${count} player${count !== 1 ? 's' : ''}</title></rect>`;
+                    }
+                }
+
+                // X axis labels — thin out if there are many bars
+                const labelStep = Math.max(1, Math.ceil(n / 15));
+                for (let i = 0; i < n; i += labelStep) {
+                    const lx = (xPos(i) + barW / 2).toFixed(1);
+                    inner += `<text x="${lx}" y="${svgH - 8}" text-anchor="middle" font-size="10" fill="#94a3b8">${i + 1}</text>`;
+                }
+                inner += `<text x="${mL + plotW / 2}" y="${svgH - 1}" text-anchor="middle" font-size="10" fill="#cbd5e1"></text>`;
+
+                return `<svg viewBox="0 0 ${svgW} ${svgH}" style="width:100%;max-width:${svgW}px;display:block">${inner}</svg>
+                    <p style="text-align:center;font-size:0.75rem;color:#94a3b8;margin-top:-0.25rem">Events attended (exact)</p>`;
+            }
+
+            function renderAttendanceLineChart(atLeastCounts, maxEvents) {
+                const svgW = 720, svgH = 200;
+                const mL = 45, mR = 15, mT = 15, mB = 34;
+                const plotW = svgW - mL - mR;
+                const plotH = svgH - mT - mB;
+                const maxCount = Math.max(...atLeastCounts, 1);
+                const n = atLeastCounts.length;
+
+                const xPos = i => n > 1 ? mL + (i / (n - 1)) * plotW : mL + plotW / 2;
+                const yPos = c => mT + plotH * (1 - c / maxCount);
+
+                let inner = '';
+                for (let i = 0; i <= 4; i++) {
+                    const c = maxCount * i / 4;
+                    const y = yPos(c).toFixed(1);
+                    inner += `<line x1="${mL}" y1="${y}" x2="${mL + plotW}" y2="${y}" stroke="#f1f5f9" stroke-width="1"/>`;
+                    inner += `<text x="${mL - 6}" y="${+y + 4}" text-anchor="end" font-size="10" fill="#94a3b8">${Math.round(c)}</text>`;
+                }
+
+                const pts = atLeastCounts.map((c, i) => `${xPos(i).toFixed(1)},${yPos(c).toFixed(1)}`).join(' ');
+                inner += `<polyline points="${pts}" fill="none" stroke="#059669" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+                for (let i = 0; i < n; i++) {
+                    inner += `<circle cx="${xPos(i).toFixed(1)}" cy="${yPos(atLeastCounts[i]).toFixed(1)}" r="2.5" fill="#059669"><title>At least ${i + 1} event${i === 0 ? '' : 's'}: ${atLeastCounts[i]} player${atLeastCounts[i] !== 1 ? 's' : ''}</title></circle>`;
+                }
+
+                const labelStep = Math.max(1, Math.ceil(n / 15));
+                for (let i = 0; i < n; i += labelStep) {
+                    inner += `<text x="${xPos(i).toFixed(1)}" y="${svgH - 8}" text-anchor="middle" font-size="10" fill="#94a3b8">${i + 1}</text>`;
+                }
+
+                return `<svg viewBox="0 0 ${svgW} ${svgH}" style="width:100%;max-width:${svgW}px;display:block">${inner}</svg>
+                    <p style="text-align:center;font-size:0.75rem;color:#94a3b8;margin-top:-0.25rem">Events attended (at least)</p>`;
             }
 
             // ═══════════════════════════════════════════════════════════

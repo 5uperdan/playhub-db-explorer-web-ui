@@ -142,6 +142,22 @@
 
         <!-- Participation tab -->
         <div id="tab-participation" class="tab-content">
+            <div class="controls lb-controls">
+                <div class="lb-controls-row">
+                    <span class="lb-filter-label">Min:</span>
+                    <label class="lb-filter-chip">Events <input id="part-min-events" type="number" min="0"
+                            value="0"></label>
+                    <label class="lb-filter-chip">Wins <input id="part-min-wins" type="number" min="0"
+                            value="0"></label>
+                    <label class="lb-filter-chip">Finals <input id="part-min-finals" type="number" min="0"
+                            value="0"></label>
+                    <label class="lb-filter-chip">Top cuts <input id="part-min-topcuts" type="number" min="0"
+                            value="0"></label>
+                </div>
+                <div id="part-settype-row" class="lb-controls-row" style="display:none"></div>
+                <p class="controls-note">Min filters apply to each player's career stats within the selected
+                    set(s). Set chips choose which set championships are shown.</p>
+            </div>
             <div id="participation-content"></div>
         </div>
 
