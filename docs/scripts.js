@@ -1064,8 +1064,11 @@
                 }
 
                 const allDates = [...new Set(allSeries.flatMap(s => s.points.map(p => p.date)))].sort();
-                const dateIndex = Object.fromEntries(allDates.map((d, i) => [d, i]));
                 const n = allDates.length;
+                // Time-proportional x axis: points are spaced by real elapsed time, not by
+                // date index (unlike the player-card mini chart, which is equidistant by design)
+                const tMin = Date.parse(allDates[0]);
+                const tMax = Date.parse(allDates[n - 1]);
                 const allRatings = allSeries.flatMap(s => s.points.map(p => p.rating));
 
                 const svgW = 640, svgH = 280;
@@ -1077,10 +1080,41 @@
                 const rPad = (maxR - minR) * 0.1 || 30;
                 const yMin = minR - rPad, yMax = maxR + rPad;
 
-                const xPos = d => mL + (n > 1 ? (dateIndex[d] / (n - 1)) * plotW : plotW / 2);
+                const xPos = d => mL + (tMax > tMin ? ((Date.parse(d) - tMin) / (tMax - tMin)) * plotW : plotW / 2);
                 const yPos = r => mT + plotH * (1 - (r - yMin) / (yMax - yMin));
 
                 let svgInner = '';
+
+                // Set championship background bands: shade each set's first-to-last
+                // competition date range so the chart shows which set was running
+                const BAND_COLORS = ['#93c5fd', '#fca5a5', '#86efac', '#fcd34d', '#c4b5fd', '#f9a8d4'];
+                const sctExists = query(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='set_championship_types'"
+                ).length > 0;
+                if (sctExists && tMax > tMin) {
+                    const setBands = query(`
+                        SELECT sct.display_name AS name, MIN(c.start_time) AS lo, MAX(c.start_time) AS hi
+                        FROM set_championship_types sct
+                        JOIN competitions c ON c.set_championship_type_uuid = sct.uuid
+                        WHERE c.start_time IS NOT NULL
+                        GROUP BY sct.uuid ORDER BY lo`);
+                    let lastLabelEnd = -Infinity;
+                    setBands.forEach((b, i) => {
+                        const loT = Math.max(Date.parse(b.lo.slice(0, 10)), tMin);
+                        const hiT = Math.min(Date.parse(b.hi.slice(0, 10)), tMax);
+                        if (hiT < loT) return; // set entirely outside the plotted range
+                        const x0 = mL + ((loT - tMin) / (tMax - tMin)) * plotW;
+                        const x1 = mL + ((hiT - tMin) / (tMax - tMin)) * plotW;
+                        svgInner += `<rect x="${x0.toFixed(1)}" y="${mT}" width="${Math.max(x1 - x0, 2).toFixed(1)}" height="${plotH}" fill="${BAND_COLORS[i % BAND_COLORS.length]}" fill-opacity="0.18"><title>${esc(b.name)}: ${b.lo.slice(0, 10)} — ${b.hi.slice(0, 10)}</title></rect>`;
+                        // Label the band unless it would overlap the previous label
+                        const cx = (x0 + x1) / 2;
+                        const estHalfW = b.name.length * 2.7;
+                        if (cx - estHalfW > lastLabelEnd + 4) {
+                            svgInner += `<text x="${cx.toFixed(1)}" y="${mT + 11}" text-anchor="middle" font-size="9" fill="#94a3b8">${esc(b.name)}</text>`;
+                            lastLabelEnd = cx + estHalfW;
+                        }
+                    });
+                }
 
                 // Horizontal grid lines + Y axis labels
                 for (let i = 0; i <= 4; i++) {
@@ -1107,24 +1141,20 @@
                     }
                 }
 
-                // X axis date labels — show up to 6, evenly spaced, skipping overlaps
-                const maxLabels = 6;
-                const minSpacing = 60; // px between labels
-                const labelIndices = [];
-                if (n === 1) {
-                    labelIndices.push(0);
+                // X axis date labels — up to 6 ticks evenly spaced in *time*; tick dates are
+                // interpolated along the axis (like a normal date axis), not data dates
+                if (tMax === tMin) {
+                    svgInner += `<text x="${(mL + plotW / 2).toFixed(1)}" y="${svgH - 8}" text-anchor="middle" font-size="10" fill="#94a3b8">${allDates[0]}</text>`;
                 } else {
-                    const step = Math.max(1, Math.round((n - 1) / (maxLabels - 1)));
-                    for (let i = 0; i < n; i += step) labelIndices.push(i);
-                    if (labelIndices[labelIndices.length - 1] !== n - 1) labelIndices.push(n - 1);
-                }
-                let lastLabelX = -Infinity;
-                for (const idx of labelIndices) {
-                    const lx = mL + (n > 1 ? (idx / (n - 1)) * plotW : plotW / 2);
-                    if (lx - lastLabelX < minSpacing && idx !== 0 && idx !== n - 1) continue;
-                    const anchor = idx === 0 ? 'start' : idx === n - 1 ? 'end' : 'middle';
-                    svgInner += `<text x="${lx.toFixed(1)}" y="${svgH - 8}" text-anchor="${anchor}" font-size="10" fill="#94a3b8">${allDates[idx]}</text>`;
-                    lastLabelX = lx;
+                    const maxLabels = 6;
+                    const tickCount = Math.min(maxLabels, n);
+                    for (let i = 0; i < tickCount; i++) {
+                        const frac = i / (tickCount - 1);
+                        const lx = mL + frac * plotW;
+                        const tickDate = new Date(tMin + frac * (tMax - tMin)).toISOString().slice(0, 10);
+                        const anchor = i === 0 ? 'start' : i === tickCount - 1 ? 'end' : 'middle';
+                        svgInner += `<text x="${lx.toFixed(1)}" y="${svgH - 8}" text-anchor="${anchor}" font-size="10" fill="#94a3b8">${tickDate}</text>`;
+                    }
                 }
 
                 const svgEl = `<svg viewBox="0 0 ${svgW} ${svgH}" style="width:100%;max-width:${svgW}px;display:block">${svgInner}</svg>`;
