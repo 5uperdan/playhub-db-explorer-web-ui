@@ -878,23 +878,35 @@
                     exactCounts.slice(i).reduce((a, b) => a + b, 0)
                 );
 
-                const barChart = renderAttendanceBarChart(exactCounts, maxEvents);
-                const lineChart = renderAttendanceLineChart(atLeastCounts, maxEvents);
+                // Total attendances contributed by each group: N players × N events each
+                const attendanceTotals = exactCounts.map((c, i) => c * (i + 1));
+
+                const barChart = renderAttendanceBarChart(exactCounts);
+                const lineChart = renderAttendanceLineChart(atLeastCounts);
+                const totalsChart = renderAttendanceBarChart(attendanceTotals, {
+                    fill: '#8b5cf6',
+                    caption: 'Events attended (exact) — total attendances from that group',
+                    tooltip: (i, v) => `${exactCounts[i]} player${exactCounts[i] !== 1 ? 's' : ''} × ${i + 1} event${i === 0 ? '' : 's'} = ${v} attendance${v !== 1 ? 's' : ''}`,
+                });
 
                 return `
                 <h3 style="font-size:0.95rem;font-weight:600;margin-bottom:0.25rem">Attendance breakdown</h3>
-                <p class="controls-note" style="margin-bottom:0.75rem">Number of players who attended exactly N events (bar chart), and how many attended at least N events (line graph below).</p>
+                <p class="controls-note" style="margin-bottom:0.75rem">Number of players who attended exactly N events (bar chart), how many attended at least N events (line graph), and how many total attendances each group accounts for (bottom bar chart).</p>
                 ${barChart}
-                ${lineChart}`;
+                ${lineChart}
+                ${totalsChart}`;
             }
 
-            function renderAttendanceBarChart(exactCounts, maxEvents) {
+            function renderAttendanceBarChart(counts, opts = {}) {
+                const fill = opts.fill ?? '#3b82f6';
+                const caption = opts.caption ?? 'Events attended (exact)';
+                const tooltip = opts.tooltip ?? ((i, v) => `${i + 1} event${i === 0 ? '' : 's'}: ${v} player${v !== 1 ? 's' : ''}`);
                 const svgW = 720, svgH = 260;
                 const mL = 45, mR = 15, mT = 15, mB = 34;
                 const plotW = svgW - mL - mR;
                 const plotH = svgH - mT - mB;
-                const maxCount = Math.max(...exactCounts, 1);
-                const n = exactCounts.length;
+                const maxCount = Math.max(...counts, 1);
+                const n = counts.length;
                 const barGap = 2;
                 const barW = Math.max(1, plotW / n - barGap);
 
@@ -910,12 +922,12 @@
                 }
 
                 for (let i = 0; i < n; i++) {
-                    const count = exactCounts[i];
+                    const count = counts[i];
                     const x = xPos(i).toFixed(1);
                     const y = yPos(count).toFixed(1);
                     const h = (plotH - (yPos(count) - mT)).toFixed(1);
                     if (count > 0) {
-                        inner += `<rect x="${x}" y="${y}" width="${barW.toFixed(1)}" height="${h}" fill="#3b82f6" fill-opacity="0.85"><title>${i + 1} event${i === 0 ? '' : 's'}: ${count} player${count !== 1 ? 's' : ''}</title></rect>`;
+                        inner += `<rect x="${x}" y="${y}" width="${barW.toFixed(1)}" height="${h}" fill="${fill}" fill-opacity="0.85"><title>${tooltip(i, count)}</title></rect>`;
                     }
                 }
 
@@ -928,10 +940,10 @@
                 inner += `<text x="${mL + plotW / 2}" y="${svgH - 1}" text-anchor="middle" font-size="10" fill="#cbd5e1"></text>`;
 
                 return `<svg viewBox="0 0 ${svgW} ${svgH}" style="width:100%;max-width:${svgW}px;display:block">${inner}</svg>
-                    <p style="text-align:center;font-size:0.75rem;color:#94a3b8;margin-top:-0.25rem">Events attended (exact)</p>`;
+                    <p style="text-align:center;font-size:0.75rem;color:#94a3b8;margin-top:-0.25rem">${caption}</p>`;
             }
 
-            function renderAttendanceLineChart(atLeastCounts, maxEvents) {
+            function renderAttendanceLineChart(atLeastCounts) {
                 const svgW = 720, svgH = 200;
                 const mL = 45, mR = 15, mT = 15, mB = 34;
                 const plotW = svgW - mL - mR;
