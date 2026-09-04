@@ -1186,12 +1186,15 @@
             // ═══════════════════════════════════════════════════════════
             //  Tournament Report tab
             // ═══════════════════════════════════════════════════════════
-            const PH_API_BASE = 'https://api.cloudflare.ravensburgerplay.com/hydraproxy/api/v2';
-            const CORS_PROXY = 'https://corsproxy.io/?url=';
+            // Self-hosted CORS proxy (Cloudflare Worker) — source in the
+            // playhub-upcoming-set-champs-web-ui repo's worker/ dir, deployed via the
+            // Cloudflare dashboard. It injects the x-game-slug/Origin/Referer headers
+            // the PlayHub API requires; without them the API returns 401, which is what
+            // corsproxy.io started doing here.
+            const API_PROXY_BASE = 'https://playhub-cors-proxy.5uperdan.workers.dev';
 
             function phFetch(path) {
-                const url = CORS_PROXY + encodeURIComponent(PH_API_BASE + path);
-                return fetch(url);
+                return fetch(API_PROXY_BASE + path, { cache: 'no-store' });
             }
 
             function trStatus(msg, isError = false) {
