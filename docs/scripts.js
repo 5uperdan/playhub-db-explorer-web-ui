@@ -55,6 +55,7 @@
                 document.getElementById('upload-error').style.display = 'none';
                 document.getElementById('upload-screen').style.display = 'none';
                 document.getElementById('app').style.display = 'block';
+                resetTournamentComparison();
                 renderCompetitions();
             }
 
@@ -118,12 +119,9 @@
                 if (setupFn) setupFn();
             }
 
+            // Adds the event to the Tournament Report comparison (and selects it).
             function goToTournamentReport(eventId) {
-                switchToTab('tournament', () => {
-                    document.getElementById('tr-url').value =
-                        `https://tcg.ravensburgerplay.com/events/${eventId}`;
-                    clearTournamentReport();
-                });
+                switchToTab('tournament', () => addTournament(eventId));
             }
 
             function goToPlayer(name) {
@@ -1203,13 +1201,6 @@
                 el.style.color = isError ? '#dc2626' : '#64748b';
             }
 
-            function clearTournamentReport() {
-                document.getElementById('tr-results').innerHTML = '';
-                document.getElementById('tr-strength-summary').style.display = 'none';
-                trStatus('');
-                document.getElementById('tr-copy-row').style.display = 'none';
-            }
-
             async function fetchAllRegistrations(eventId) {
                 let page = 1;
                 const all = [];
@@ -1226,139 +1217,460 @@
                 return all;
             }
 
-            function renderStrengthSummary(buckets, totalPlayers) {
-                const el = document.getElementById('tr-strength-summary');
-                const tiers = [
-                    { key: 'elite',     label: 'Elite',     range: 'top 2%',   color: '#7c3aed', bg: '#f5f3ff' },
-                    { key: 'subElite',  label: 'Sub-elite', range: '2–5%',     color: '#2563eb', bg: '#eff6ff' },
-                    { key: 'excellent', label: 'Excellent', range: '5–10%',    color: '#0891b2', bg: '#ecfeff' },
-                    { key: 'great',     label: 'Great',     range: '10–25%',   color: '#059669', bg: '#f0fdf4' },
-                ];
-                const rows = tiers.map(t => {
-                    const names = buckets[t.key];
-                    return `
-                    <div style="display:flex;align-items:baseline;gap:0.6rem;padding:0.45rem 0;border-bottom:1px solid #f1f5f9">
-                      <span style="min-width:120px;font-weight:600;color:${t.color};font-size:0.875rem">${t.label} <span style="font-weight:400;color:#94a3b8;font-size:0.775rem">(${t.range})</span></span>
-                      <span style="font-size:0.875rem;color:#1e293b">${names.length}</span>
-                    </div>`;
-                }).join('');
+            // ── Comparison state ──
+            // The tournaments being compared, in the order added. Each entry is
+            //   { eventId, status: 'loading' | 'ok' | 'error', error, meta, players, stats }
+            // meta is { name, venue, date }. Players come from the live registrations API,
+            // so they are current even when the uploaded database file is old; ratings
+            // come from the database.
+            let trEvents = [];
+            let trSelectedId = null;
+            // The card list is rebuilt only when this changes, so a slow load finishing
+            // in another column doesn't collapse the cards you have open.
+            let trRenderedCardsKey = null;
+            // Cached per loaded database — older DB files predate display_status.
+            let trHasDisplayStatus = null;
+            // Generous enough that a date search shows every event that day (the busiest
+            // Saturdays have ~30); past this the list says it is truncated.
+            const TR_SEARCH_LIMIT = 100;
 
-                el.style.display = '';
-                el.innerHTML = `
-                <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:0.875rem 1rem;max-width:720px">
-                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
-                    <span style="font-weight:600;font-size:0.925rem;color:#1e293b">Tournament Strength <span style="font-weight:400;color:#94a3b8;font-size:0.825rem">(${totalPlayers} players)</span></span>
-                    <span>
-                      <button id="tr-strength-copy-btn"
-                        style="padding:0.3rem 0.75rem;background:#fff;color:#1e293b;border:1px solid #cbd5e1;border-radius:6px;font:inherit;font-size:0.8rem;cursor:pointer">Copy</button>
-                      <span id="tr-strength-copy-status" style="font-size:0.8rem;color:#64748b;margin-left:0.5rem"></span>
-                    </span>
-                  </div>
-                  ${rows}
-                </div>`;
+            const TR_TIERS = [
+                { key: 'elite',     label: 'Elite',     range: 'top 2%', color: '#7c3aed' },
+                { key: 'subElite',  label: 'Sub-elite', range: '2–5%',   color: '#2563eb' },
+                { key: 'excellent', label: 'Excellent', range: '5–10%',  color: '#0891b2' },
+                { key: 'great',     label: 'Great',     range: '10–25%', color: '#059669' },
+            ];
+            // Events of 17+ players cut to a Top 8, so this is the field you'd have to beat.
+            const TR_TOP_N = 8;
 
-                document.getElementById('tr-strength-copy-btn').addEventListener('click', () => {
-                    const lines = [`Tournament Strength (${totalPlayers} players)`];
-                    tiers.forEach(t => {
-                        lines.push(`${t.label} (${t.range}): ${buckets[t.key].length}`);
-                    });
-                    navigator.clipboard.writeText(lines.join('\n')).then(() => {
-                        const st = document.getElementById('tr-strength-copy-status');
-                        st.textContent = 'Copied!';
-                        setTimeout(() => st.textContent = '', 2000);
-                    });
-                });
+            /**
+             * Tier counts and Delo depth for one field. Pure: no database or DOM access.
+             *
+             * players: [{ name, ri }], where ri is fetchRatingInfo() output or null for a
+             * player not in the database / without a rating. Tiers use getTierClass()'s
+             * inclusive boundaries; ri.rank is null outside the top third of the pool,
+             * which is below every tier anyway.
+             *
+             * Returns { total, rated, tiers, median, topAvg, topN }. topN is how many
+             * ratings topAvg actually averages — fewer than requested in a thin field.
+             */
+            function computeFieldStats(players, topN = 8) {
+                const tiers = { elite: [], subElite: [], excellent: [], great: [] };
+                const ratings = [];
+                for (const pl of players) {
+                    const ri = pl.ri;
+                    if (!ri || ri.rating == null) continue;
+                    ratings.push(Number(ri.rating));
+                    if (ri.rank == null || !ri.total) continue;
+                    const pct = ri.rank / ri.total;
+                    if (pct <= 0.02) tiers.elite.push(pl.name);
+                    else if (pct <= 0.05) tiers.subElite.push(pl.name);
+                    else if (pct <= 0.10) tiers.excellent.push(pl.name);
+                    else if (pct <= 0.25) tiers.great.push(pl.name);
+                }
+                const sorted = [...ratings].sort((a, b) => a - b);
+                const n = sorted.length;
+                const median = n === 0 ? null
+                    : n % 2 === 1 ? sorted[(n - 1) / 2]
+                    : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+                const top = sorted.slice(-topN);
+                const topAvg = top.length ? top.reduce((a, b) => a + b, 0) / top.length : null;
+                return { total: players.length, rated: n, tiers, median, topAvg, topN: top.length };
             }
 
-            document.getElementById('tr-url').addEventListener('input', clearTournamentReport);
+            function trHasColumn(table, column) {
+                return query(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`, [column]).length > 0;
+            }
 
-            document.getElementById('tr-btn').addEventListener('click', async () => {
-                const urlVal = document.getElementById('tr-url').value.trim();
-                const match = urlVal.match(/\/events\/(\d+)/);
-                if (!match) {
-                    trStatus('Could not find an event ID in that URL.', true);
-                    return;
-                }
-                const eventId = match[1];
-                const resultsEl = document.getElementById('tr-results');
-                resultsEl.innerHTML = '';
-                document.getElementById('tr-strength-summary').style.display = 'none';
-                trStatus('Fetching registrations…');
-                document.getElementById('tr-btn').disabled = true;
+            function trEventMetaFromDb(eventId) {
+                const rows = query(`
+                    SELECT c.name, c.start_date, v.name AS venue_name
+                    FROM competitions c
+                    LEFT JOIN venues v ON v.ph_uuid = c.venue_uuid
+                    WHERE c.ph_event_id = ?`, [Number(eventId)]);
+                return rows.length ? { name: rows[0].name, venue: rows[0].venue_name, date: rows[0].start_date } : null;
+            }
 
-                let registrations;
+            /** Best effort, for events added by URL that the pipeline hasn't imported. */
+            async function trEventMetaFromApi(eventId) {
                 try {
-                    registrations = await fetchAllRegistrations(eventId);
-                } catch (err) {
-                    trStatus(`Failed to fetch registrations: ${err.message}`, true);
-                    document.getElementById('tr-btn').disabled = false;
-                    return;
+                    const res = await phFetch(`/events/${eventId}`);
+                    if (!res.ok) return null;
+                    const d = await res.json();
+                    return {
+                        name: d.name ?? null,
+                        venue: d.store?.name ?? null,
+                        date: (d.start_datetime || '').split('T')[0] || null,
+                    };
+                } catch {
+                    return null;
                 }
+            }
 
-                if (!registrations.length) {
-                    trStatus('No registrations found for this event.');
-                    document.getElementById('tr-btn').disabled = false;
-                    return;
-                }
-
-                trStatus(`${registrations.length} players registered. Looking up histories…`);
-
-                const tierBuckets = { elite: [], subElite: [], excellent: [], great: [] };
-
-                const cards = registrations.map(reg => {
+            function trPlayersFromRegistrations(registrations) {
+                return registrations.map(reg => {
                     const user = reg.user ?? {};
                     const phUserId = user.id ?? null;
                     const displayName = reg.best_identifier ?? user.best_identifier ?? 'Unknown';
-
                     // Look up by Play Hub user ID first, then by exact name
-                    let playerRow = null;
+                    let row = null;
                     if (phUserId != null) {
-                        const rows = query('SELECT uuid, name FROM players WHERE ph_user_id = ?', [phUserId]);
-                        if (rows.length) playerRow = rows[0];
+                        row = query('SELECT uuid, name FROM players WHERE ph_user_id = ?', [phUserId])[0] ?? null;
                     }
-                    if (!playerRow) {
-                        const rows = query('SELECT uuid, name FROM players WHERE LOWER(name) = LOWER(?)', [displayName]);
-                        if (rows.length) playerRow = rows[0];
+                    if (!row) {
+                        row = query('SELECT uuid, name FROM players WHERE LOWER(name) = LOWER(?)', [displayName])[0] ?? null;
                     }
+                    return {
+                        displayName,
+                        name: row ? row.name : displayName,
+                        uuid: row ? row.uuid : null,
+                        ri: row ? fetchRatingInfo(row.uuid) : null,
+                    };
+                });
+            }
 
-                    const inDb = playerRow != null;
-                    const name = playerRow ? playerRow.name : displayName;
-                    const uuid = playerRow ? playerRow.uuid : null;
-                    const ri = inDb ? fetchRatingInfo(uuid) : null;
+            // ── Adding and removing tournaments ──
+            async function addTournament(eventId) {
+                eventId = String(eventId);
+                if (trEvents.some(e => e.eventId === eventId)) {
+                    trSelectedId = eventId;
+                    renderTournamentReport();
+                    return;
+                }
+                const entry = {
+                    eventId, status: 'loading', error: null,
+                    meta: trEventMetaFromDb(eventId), players: [], stats: null,
+                };
+                trEvents.push(entry);
+                trSelectedId = eventId;
+                await loadTournamentEntry(entry);
+            }
 
-                    if (ri && ri.rank != null) {
-                        const pct = ri.rank / ri.total;
-                        if (pct <= 0.02) tierBuckets.elite.push(name);
-                        else if (pct <= 0.05) tierBuckets.subElite.push(name);
-                        else if (pct <= 0.10) tierBuckets.excellent.push(name);
-                        else if (pct <= 0.25) tierBuckets.great.push(name);
-                    }
+            async function loadTournamentEntry(entry) {
+                entry.status = 'loading';
+                entry.error = null;
+                renderTournamentReport();
+                try {
+                    if (!entry.meta) entry.meta = await trEventMetaFromApi(entry.eventId);
+                    const registrations = await fetchAllRegistrations(entry.eventId);
+                    // Removed, or the database changed, while this was in flight.
+                    if (!trEvents.includes(entry)) return;
+                    entry.players = trPlayersFromRegistrations(registrations);
+                    entry.stats = computeFieldStats(entry.players, TR_TOP_N);
+                    entry.status = 'ok';
+                } catch (err) {
+                    if (!trEvents.includes(entry)) return;
+                    entry.status = 'error';
+                    entry.error = err.message;
+                }
+                if (trEvents.every(e => e.status !== 'loading')) trStatus('');
+                renderTournamentReport();
+            }
 
-                    const bodyId = `tr-pbody-${esc(uuid ?? displayName.replace(/\W/g, '_'))}`;
+            function removeTournament(eventId) {
+                trEvents = trEvents.filter(e => e.eventId !== eventId);
+                if (trSelectedId === eventId) {
+                    trSelectedId = trEvents.length ? trEvents[trEvents.length - 1].eventId : null;
+                }
+                renderTournamentReport();
+                renderTrSearchResults();
+            }
 
-                    return `
-                    <div class="player-card${inDb ? '' : ' tr-unknown'}" data-uuid="${esc(uuid)}">
+            /** A different database invalidates every player lookup and rating. */
+            function resetTournamentComparison() {
+                trEvents = [];
+                trSelectedId = null;
+                trRenderedCardsKey = null;
+                trHasDisplayStatus = null;
+                document.getElementById('tr-search').value = '';
+                document.getElementById('tr-url').value = '';
+                trStatus('');
+                renderTrSearchResults();
+                renderTournamentReport();
+            }
+
+            // ── Rendering ──
+            function trColumnLabel(entry) {
+                const m = entry.meta;
+                return {
+                    title: m?.venue || m?.name || `Event ${entry.eventId}`,
+                    date: m?.date || '',
+                    tooltip: m?.name || '',
+                };
+            }
+
+            function fmtDelo(v) {
+                return v == null ? '—' : Number(v).toFixed(1);
+            }
+
+            function renderTournamentReport() {
+                renderComparisonTable();
+                renderSelectedCards();
+            }
+
+            function renderComparisonTable() {
+                const el = document.getElementById('tr-strength-summary');
+                if (!trEvents.length) {
+                    el.style.display = 'none';
+                    el.innerHTML = '';
+                    return;
+                }
+                el.style.display = '';
+
+                const selClass = e => (e.eventId === trSelectedId ? ' tr-selected' : '');
+
+                const heads = trEvents.map(e => {
+                    const lbl = trColumnLabel(e);
+                    const state = e.status === 'loading'
+                        ? '<div class="tr-col-state">Loading…</div>'
+                        : e.status === 'error'
+                            ? `<div class="tr-col-state tr-col-error" title="${esc(e.error)}">Failed · <button type="button" class="tr-retry" data-event-id="${esc(e.eventId)}">Retry</button></div>`
+                            : '';
+                    return `<th class="tr-col${selClass(e)}" data-event-id="${esc(e.eventId)}" title="${esc(lbl.tooltip)}">
+                        <button type="button" class="tr-remove" data-event-id="${esc(e.eventId)}" title="Remove from comparison" aria-label="Remove ${esc(lbl.title)}">✕</button>
+                        <div class="tr-col-title">${esc(lbl.title)}</div>
+                        <div class="tr-col-date">${esc(lbl.date)}</div>
+                        ${state}
+                    </th>`;
+                }).join('');
+
+                const row = (label, valueFn, labelStyle = '') => {
+                    const cells = trEvents.map(e => {
+                        const v = e.status === 'ok' ? valueFn(e.stats) : '<span class="muted">—</span>';
+                        return `<td class="tr-col${selClass(e)}" data-event-id="${esc(e.eventId)}">${v}</td>`;
+                    }).join('');
+                    return `<tr><th scope="row"${labelStyle}>${label}</th>${cells}</tr>`;
+                };
+
+                const rows = [
+                    row('Players', s => s.total),
+                    ...TR_TIERS.map(t => row(
+                        `${t.label} <span class="tr-range">(${t.range})</span>`,
+                        s => s.tiers[t.key].length,
+                        ` style="color:${t.color}"`,
+                    )),
+                    row('Median Delo', s => fmtDelo(s.median)),
+                    row(`Top-${TR_TOP_N} avg Delo`, s => s.topAvg == null ? '—'
+                        : `${fmtDelo(s.topAvg)}${s.topN < TR_TOP_N ? ` <span class="muted">(top ${s.topN})</span>` : ''}`),
+                    row('Rated', s => `${s.rated}/${s.total}`),
+                ].join('');
+
+                const n = trEvents.length;
+                el.innerHTML = `
+                <div class="tr-compare-head">
+                  <span>Tournament Strength <span class="muted" style="font-weight:400">(${n} tournament${n === 1 ? '' : 's'})</span></span>
+                  <span>
+                    <button type="button" id="tr-strength-copy-btn" class="tr-small-btn">Copy</button>
+                    <span id="tr-strength-copy-status" class="tr-copy-status"></span>
+                  </span>
+                </div>
+                <div class="table-wrap"><table class="tr-compare">
+                  <thead><tr><th></th>${heads}</tr></thead>
+                  <tbody>${rows}</tbody>
+                </table></div>`;
+            }
+
+            function trPlayerCardHtml(pl) {
+                const inDb = pl.uuid != null;
+                const bodyId = `tr-pbody-${esc(pl.uuid ?? pl.displayName.replace(/\W/g, '_'))}`;
+                return `
+                    <div class="player-card${inDb ? '' : ' tr-unknown'}" data-uuid="${esc(pl.uuid)}">
                       <div class="player-card-header" onclick="trTogglePlayer(this)">
-                        ${buildPlayerHeader(name, ri)}
+                        ${buildPlayerHeader(pl.name, pl.ri)}
                         <span class="chevron">${inDb ? '▼' : '—'}</span>
                       </div>
                       <div class="player-card-body" id="${bodyId}">
                         ${inDb ? '<div class="empty">Loading…</div>' : '<div class="comp-section" style="color:#94a3b8;font-style:italic">Not found in database</div>'}
                       </div>
                     </div>`;
-                });
+            }
 
-                resultsEl.innerHTML = cards.join('');
-                const foundCount = registrations.filter((_, i) => {
-                    const card = resultsEl.children[i];
-                    return card && card.dataset.uuid && card.dataset.uuid !== 'null' && card.dataset.uuid !== '';
-                }).length;
-                trStatus(`${registrations.length} players · ${foundCount} found in database`);
-                document.getElementById('tr-copy-row').style.display = foundCount > 0 ? '' : 'none';
+            function renderSelectedCards() {
+                const headEl = document.getElementById('tr-cards-head');
+                const resultsEl = document.getElementById('tr-results');
+                const copyRow = document.getElementById('tr-copy-row');
+                const entry = trEvents.find(e => e.eventId === trSelectedId) ?? null;
+
+                const key = entry ? `${entry.eventId}:${entry.status}` : 'none';
+                if (key === trRenderedCardsKey) return;
+                trRenderedCardsKey = key;
                 document.getElementById('tr-copy-status').textContent = '';
-                document.getElementById('tr-btn').disabled = false;
 
-                renderStrengthSummary(tierBuckets, registrations.length);
+                if (!entry) {
+                    headEl.innerHTML = '';
+                    resultsEl.innerHTML = '';
+                    copyRow.style.display = 'none';
+                    return;
+                }
+
+                const lbl = trColumnLabel(entry);
+                const where = `${esc(lbl.title)}${lbl.date ? ` · ${esc(lbl.date)}` : ''}`;
+                if (entry.status !== 'ok') {
+                    headEl.innerHTML = `<h3 class="tr-cards-title">Players at ${where}</h3>`;
+                    resultsEl.innerHTML = entry.status === 'loading'
+                        ? '<div class="empty">Loading registrations…</div>'
+                        : `<div class="empty">Could not load registrations: ${esc(entry.error)}</div>`;
+                    copyRow.style.display = 'none';
+                    return;
+                }
+
+                const found = entry.players.filter(p => p.uuid != null).length;
+                headEl.innerHTML = `<h3 class="tr-cards-title">Players at ${where}
+                    <span class="muted" style="font-weight:400;font-size:0.85rem">(${entry.players.length} players · ${found} found in database)</span></h3>`;
+                if (!entry.players.length) {
+                    resultsEl.innerHTML = '<div class="empty">No registrations found for this event.</div>';
+                    copyRow.style.display = 'none';
+                    return;
+                }
+                resultsEl.innerHTML = entry.players.map(trPlayerCardHtml).join('');
+                copyRow.style.display = found > 0 ? '' : 'none';
+            }
+
+            /**
+             * Copy text and report the outcome in statusEl. Browsers can refuse clipboard
+             * access (permissions, an insecure context, an embedding policy); without the
+             * catch the button would silently do nothing.
+             */
+            function trCopyToClipboard(text, statusEl) {
+                const show = (msg, ms) => {
+                    statusEl.textContent = msg;
+                    setTimeout(() => { if (statusEl.textContent === msg) statusEl.textContent = ''; }, ms);
+                };
+                navigator.clipboard.writeText(text).then(
+                    () => show('Copied!', 2000),
+                    () => show('Copy failed — your browser blocked clipboard access', 4000),
+                );
+            }
+
+            /**
+             * Plain-text comparison. A single tournament gives the long-standing
+             * "Tournament Strength" block plus the three Delo lines; several are
+             * separated by blank lines, each headed by its venue and date.
+             */
+            function trComparisonText() {
+                const ready = trEvents.filter(e => e.status === 'ok');
+                return ready.map(e => {
+                    const s = e.stats;
+                    const lbl = trColumnLabel(e);
+                    const lines = [];
+                    if (ready.length > 1) lines.push(`${lbl.title}${lbl.date ? ` · ${lbl.date}` : ''}`);
+                    lines.push(`Tournament Strength (${s.total} players)`);
+                    TR_TIERS.forEach(t => lines.push(`${t.label} (${t.range}): ${s.tiers[t.key].length}`));
+                    lines.push(`Median Delo: ${fmtDelo(s.median)}`);
+                    lines.push(`Top-${s.topN || TR_TOP_N} avg Delo: ${fmtDelo(s.topAvg)}`);
+                    lines.push(`Rated: ${s.rated}/${s.total}`);
+                    return lines.join('\n');
+                }).join('\n\n');
+            }
+
+            // ── Picking tournaments from the database ──
+            function renderTrSearchResults() {
+                const input = document.getElementById('tr-search');
+                const el = document.getElementById('tr-search-results');
+                const term = input.value.trim().toLowerCase();
+                if (term.length < 2 || !db) {
+                    el.innerHTML = '';
+                    el.style.display = 'none';
+                    return;
+                }
+                if (trHasDisplayStatus === null) trHasDisplayStatus = trHasColumn('competitions', 'display_status');
+
+                const today = new Date().toISOString().slice(0, 10);
+                const like = `%${term}%`;
+                // Upcoming events first (soonest first), then past ones (most recent first).
+                const rows = query(`
+                    SELECT c.ph_event_id, c.name, c.start_date, c.attended_player_count, v.name AS venue_name
+                    FROM competitions c
+                    LEFT JOIN venues v ON v.ph_uuid = c.venue_uuid
+                    WHERE c.ph_event_id IS NOT NULL
+                      AND (LOWER(c.name) LIKE ? OR LOWER(COALESCE(v.name, '')) LIKE ? OR c.start_date LIKE ?)
+                      ${trHasDisplayStatus ? "AND COALESCE(c.display_status, '') NOT IN ('canceled', 'cancelled')" : ''}
+                    ORDER BY (c.start_date >= ?) DESC,
+                             CASE WHEN c.start_date >= ? THEN c.start_date END ASC,
+                             c.start_date DESC
+                    LIMIT ?`, [like, like, like, today, today, TR_SEARCH_LIMIT + 1]);
+
+                el.style.display = '';
+                if (!rows.length) {
+                    el.innerHTML = '<div class="tr-search-empty">No tournaments in your database match that.</div>';
+                    return;
+                }
+                const truncated = rows.length > TR_SEARCH_LIMIT;
+                if (truncated) rows.length = TR_SEARCH_LIMIT;
+                const added = new Set(trEvents.map(e => e.eventId));
+                el.innerHTML = rows.map(r => {
+                    const id = String(r.ph_event_id);
+                    const isAdded = added.has(id);
+                    const past = r.start_date < today ? ' tr-si-past' : '';
+                    const count = isAdded ? 'added'
+                        : r.attended_player_count != null ? `${r.attended_player_count} players` : '';
+                    return `<button type="button" class="tr-search-item${isAdded ? ' tr-added' : ''}${past}" data-event-id="${esc(id)}" title="${esc(r.name)}">
+                        <span class="tr-si-date">${esc(r.start_date)}</span>
+                        <span class="tr-si-venue">${esc(r.venue_name) || '—'}</span>
+                        <span class="tr-si-name">${esc(r.name)}</span>
+                        <span class="tr-si-count">${esc(count)}</span>
+                    </button>`;
+                }).join('') + (truncated
+                    ? `<div class="tr-search-empty">Showing the first ${TR_SEARCH_LIMIT} — narrow the search to see the rest.</div>`
+                    : '');
+            }
+
+            function addTournamentFromUrl() {
+                const urlInput = document.getElementById('tr-url');
+                const raw = urlInput.value.trim();
+                const match = raw.match(/\/events\/(\d+)/) ?? raw.match(/^(\d+)$/);
+                if (!match) {
+                    trStatus('Could not find an event ID in that URL.', true);
+                    return;
+                }
+                trStatus('');
+                urlInput.value = '';
+                addTournament(match[1]);
+            }
+
+            // ── Events ──
+            document.getElementById('tr-search').addEventListener('input', renderTrSearchResults);
+            document.getElementById('tr-search').addEventListener('keydown', e => {
+                if (e.key === 'Escape') {
+                    e.target.value = '';
+                    renderTrSearchResults();
+                }
+            });
+            // Results stay open after adding, so several events can be picked from one search.
+            document.getElementById('tr-search-results').addEventListener('click', e => {
+                const item = e.target.closest('.tr-search-item');
+                if (!item || item.classList.contains('tr-added')) return;
+                addTournament(item.dataset.eventId);
+                renderTrSearchResults();
+            });
+
+            document.getElementById('tr-btn').addEventListener('click', addTournamentFromUrl);
+            document.getElementById('tr-url').addEventListener('keydown', e => {
+                if (e.key === 'Enter') addTournamentFromUrl();
+            });
+
+            // One delegated listener: the table's innerHTML is replaced on every render.
+            document.getElementById('tr-strength-summary').addEventListener('click', e => {
+                const remove = e.target.closest('.tr-remove');
+                if (remove) {
+                    removeTournament(remove.dataset.eventId);
+                    return;
+                }
+                const retry = e.target.closest('.tr-retry');
+                if (retry) {
+                    const entry = trEvents.find(x => x.eventId === retry.dataset.eventId);
+                    if (entry) loadTournamentEntry(entry);
+                    return;
+                }
+                if (e.target.closest('#tr-strength-copy-btn')) {
+                    trCopyToClipboard(trComparisonText(), document.getElementById('tr-strength-copy-status'));
+                    return;
+                }
+                const col = e.target.closest('.tr-col');
+                if (col && col.dataset.eventId !== trSelectedId) {
+                    trSelectedId = col.dataset.eventId;
+                    renderTournamentReport();
+                }
             });
 
             document.getElementById('tr-copy-btn').addEventListener('click', () => {
@@ -1372,17 +1684,13 @@
                     const ratingStr = ratingSpan ? ratingSpan.textContent.trim() : '';
                     lines.push(playerInfoText(uuid, rawName, ratingStr));
                 }
-                const text = lines.join('\n');
-                navigator.clipboard.writeText(text).then(() => {
-                    const st = document.getElementById('tr-copy-status');
-                    st.textContent = 'Copied!';
-                    setTimeout(() => st.textContent = '', 2000);
-                });
+                trCopyToClipboard(lines.join('\n'), document.getElementById('tr-copy-status'));
             });
 
             // Build a CLI-style plain-text representation of a player's history
             function playerInfoText(playerUuid, name, ratingStr) {
-                const header = ratingStr ? `${name} [${ratingStr.replace(/^ · /, '')}]` : name;
+                // The caller trims ratingStr, so the separator arrives as "· " with no leading space.
+                const header = ratingStr ? `${name} [${ratingStr.replace(/^\s*·\s*/, '')}]` : name;
                 const lines = [header];
 
                 if (!playerUuid || playerUuid === 'null') {

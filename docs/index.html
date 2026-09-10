@@ -210,26 +210,33 @@
 
         <!-- Tournament Report tab -->
         <div id="tab-tournament" class="tab-content">
-            <div style="max-width:640px;margin-bottom:1.5rem">
+            <div style="max-width:720px;margin-bottom:1.5rem">
                 <p style="color:#64748b;font-size:0.9rem;margin-bottom:1rem">
-                    Enter a Play Hub event URL to see the full match history for every registered player.
-                    Players not yet in your database are listed by name only.
+                    Compare the fields at one or more tournaments. Pick events from your database, or add any
+                    Play Hub event by URL. Player lists are fetched live, so they're current even if your database
+                    file is old; ratings come from your database.
                 </p>
-                <div class="controls" style="margin-bottom:0.5rem">
-                    <input id="tr-url" type="text" placeholder="https://tcg.ravensburgerplay.com/events/12345"
+                <div class="tr-search-wrap">
+                    <input id="tr-search" type="search" autocomplete="off"
+                        placeholder="Search by venue, event name or date (e.g. 2026-09-13)">
+                    <div id="tr-search-results" class="tr-search-results" style="display:none"></div>
+                </div>
+                <div class="controls" style="margin:0.75rem 0 0.5rem">
+                    <input id="tr-url" type="text" placeholder="…or add by URL: https://tcg.ravensburgerplay.com/events/12345"
                         autocomplete="off" style="max-width:none;flex:1">
                     <button id="tr-btn"
-                        style="padding:0.5rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:6px;font:inherit;font-size:0.9rem;cursor:pointer;white-space:nowrap;transition:background 0.15s">Load</button>
+                        style="padding:0.5rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:6px;font:inherit;font-size:0.9rem;cursor:pointer;white-space:nowrap;transition:background 0.15s">Add</button>
                 </div>
                 <div id="tr-status" style="font-size:0.85rem;color:#64748b;min-height:1.4rem"></div>
-                <div id="tr-copy-row" style="display:none;margin-top:0.75rem">
-                    <button id="tr-copy-btn"
-                        style="padding:0.4rem 0.875rem;background:#fff;color:#1e293b;border:1px solid #cbd5e1;border-radius:6px;font:inherit;font-size:0.85rem;cursor:pointer;transition:background 0.15s">Copy
-                        all to clipboard</button>
-                    <span id="tr-copy-status" style="font-size:0.8rem;color:#64748b;margin-left:0.75rem"></span>
-                </div>
             </div>
             <div id="tr-strength-summary" style="display:none;margin-bottom:1.5rem"></div>
+            <div id="tr-cards-head"></div>
+            <div id="tr-copy-row" style="display:none;margin-bottom:0.75rem">
+                <button id="tr-copy-btn"
+                    style="padding:0.4rem 0.875rem;background:#fff;color:#1e293b;border:1px solid #cbd5e1;border-radius:6px;font:inherit;font-size:0.85rem;cursor:pointer;transition:background 0.15s">Copy
+                    all to clipboard</button>
+                <span id="tr-copy-status" style="font-size:0.8rem;color:#64748b;margin-left:0.75rem"></span>
+            </div>
             <div id="tr-results" class="player-list"></div>
         </div>
 

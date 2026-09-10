@@ -557,6 +557,253 @@
         }
 
         /* ── Mobile ── */
+        /* ── Tournament Report: comparison ── */
+        .tr-search-wrap input {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font: inherit;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .tr-search-wrap input:focus {
+            border-color: #2563eb;
+        }
+
+        .tr-search-results {
+            margin-top: 0.35rem;
+            max-height: 320px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #fff;
+        }
+
+        .tr-search-item {
+            display: flex;
+            align-items: baseline;
+            gap: 0.6rem;
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: none;
+            border-bottom: 1px solid #f1f5f9;
+            background: none;
+            font: inherit;
+            font-size: 0.85rem;
+            text-align: left;
+            color: #1e293b;
+            cursor: pointer;
+        }
+
+        .tr-search-item:last-child {
+            border-bottom: none;
+        }
+
+        .tr-search-item:hover,
+        .tr-search-item:focus-visible {
+            background: #f8fafc;
+        }
+
+        .tr-search-item.tr-added {
+            cursor: default;
+            color: #94a3b8;
+        }
+
+        .tr-si-date {
+            color: #64748b;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .tr-si-past .tr-si-date {
+            color: #cbd5e1;
+        }
+
+        .tr-si-venue {
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .tr-si-name {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #64748b;
+        }
+
+        .tr-si-count {
+            color: #94a3b8;
+            white-space: nowrap;
+        }
+
+        .tr-search-empty {
+            padding: 0.6rem 0.75rem;
+            color: #94a3b8;
+            font-size: 0.85rem;
+            font-style: italic;
+        }
+
+        .tr-compare-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            font-size: 0.925rem;
+            color: #1e293b;
+        }
+
+        .tr-compare {
+            width: auto;
+            min-width: 100%;
+        }
+
+        .tr-compare thead th.tr-col {
+            position: relative;
+            min-width: 120px;
+            max-width: 200px;
+            padding-right: 1.75rem;
+            vertical-align: top;
+            white-space: normal;
+            text-transform: none;
+            letter-spacing: 0;
+            font-size: 0.85rem;
+            color: #1e293b;
+            cursor: pointer;
+        }
+
+        .tr-compare tbody th {
+            padding: 0.5rem 0.875rem;
+            border-bottom: 1px solid #f1f5f9;
+            text-align: left;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #475569;
+            white-space: nowrap;
+        }
+
+        .tr-compare tbody tr:last-child th {
+            border-bottom: none;
+        }
+
+        /* Row labels stay put while the tournament columns scroll sideways, so on a
+           narrow screen you can still tell which number is which. */
+        .tr-compare thead th:first-child,
+        .tr-compare tbody th {
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            background: #fff;
+        }
+
+        .tr-compare thead th:first-child {
+            background: #f8fafc;
+        }
+
+        .tr-compare tbody td {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            cursor: pointer;
+        }
+
+        .tr-compare .tr-selected,
+        .tr-compare tbody tr:hover td.tr-selected {
+            background: #eff6ff;
+        }
+
+        .tr-compare thead th.tr-selected {
+            box-shadow: inset 0 -2px 0 #2563eb;
+        }
+
+        .tr-col-title {
+            font-weight: 600;
+        }
+
+        .tr-col-date {
+            font-weight: 400;
+            font-size: 0.78rem;
+            color: #64748b;
+        }
+
+        .tr-col-state {
+            margin-top: 0.2rem;
+            font-weight: 400;
+            font-size: 0.78rem;
+            color: #64748b;
+        }
+
+        .tr-col-error {
+            color: #dc2626;
+        }
+
+        .tr-remove {
+            position: absolute;
+            top: 0.4rem;
+            right: 0.4rem;
+            padding: 0.1rem 0.3rem;
+            border: none;
+            border-radius: 4px;
+            background: none;
+            color: #94a3b8;
+            font-size: 0.8rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .tr-remove:hover {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+
+        .tr-retry {
+            padding: 0 0.35rem;
+            border: 1px solid #fecaca;
+            border-radius: 4px;
+            background: #fff;
+            color: #dc2626;
+            font: inherit;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+
+        .tr-range {
+            font-weight: 400;
+            font-size: 0.775rem;
+            color: #94a3b8;
+        }
+
+        .tr-small-btn {
+            padding: 0.3rem 0.75rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            background: #fff;
+            color: #1e293b;
+            font: inherit;
+            font-size: 0.8rem;
+            font-weight: 400;
+            cursor: pointer;
+        }
+
+        .tr-copy-status {
+            margin-left: 0.5rem;
+            font-size: 0.8rem;
+            font-weight: 400;
+            color: #64748b;
+        }
+
+        .tr-cards-title {
+            margin: 0 0 0.6rem;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
         @media (max-width: 640px) {
             header {
                 padding: 0 0.75rem;
