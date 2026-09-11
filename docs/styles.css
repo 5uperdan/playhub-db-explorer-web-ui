@@ -491,19 +491,20 @@
 
         /* Head to Head tells the two players apart by colour, never by outcome: green
            and red would read as win/loss from player 1's side, and blue reads as a link.
-           Gold rather than yellow for text, which is ~1.9:1 on white and unreadable; the
-           chips pair a pale fill with dark text, like the win/loss badges (all ≥4.5:1). */
-        .h2h-p1 { color: #a16207; }
-        .h2h-p2 { color: #6d28d9; }
+           Player 1 teal, player 2 vermilion. Text shades are the most vivid that still
+           pass 4.5:1 on white (classic vermilion #e34234 is only 4.1:1); the chips pair a
+           pale fill with dark text, like the win/loss badges. */
+        .h2h-p1 { color: #0f766e; }
+        .h2h-p2 { color: #d0391f; }
 
         .badge.h2h-win-p1 {
-            background: #fef9c3;
-            color: #854d0e;
+            background: #ccfbf1;
+            color: #115e59;
         }
 
         .badge.h2h-win-p2 {
-            background: #ede9fe;
-            color: #5b21b6;
+            background: #fde6e1;
+            color: #9a2a17;
         }
 
         .h2h-meta {
