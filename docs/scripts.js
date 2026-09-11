@@ -1959,9 +1959,9 @@
                 summaryEl.innerHTML = `
                     <div class="h2h-summary-box">
                         <div class="h2h-scoreline">
-                            <span class="h2h-pname" style="color:#2563eb">${esc(p1.name)}</span>
-                            <span class="h2h-tally">${p1Wins} – ${draws} – ${p2Wins}</span>
-                            <span class="h2h-pname" style="color:#ef4444">${esc(p2.name)}</span>
+                            <span class="h2h-pname h2h-p1">${esc(p1.name)}</span>
+                            <span class="h2h-tally"><span class="h2h-p1">${p1Wins}</span> – ${draws} – <span class="h2h-p2">${p2Wins}</span></span>
+                            <span class="h2h-pname h2h-p2">${esc(p2.name)}</span>
                         </div>
                         <div class="h2h-meta">${total} match${total !== 1 ? 'es' : ''} · ${p1Wins} win${p1Wins !== 1 ? 's' : ''} for ${esc(p1.name)} · ${p2Wins} win${p2Wins !== 1 ? 's' : ''} for ${esc(p2.name)}${draws ? ` · ${draws} draw${draws !== 1 ? 's' : ''}` : ''}</div>
                     </div>`;
@@ -1987,9 +1987,9 @@
                         if (m.winning_player_uuid === null) {
                             chip = `<span class="badge draw">Draw</span>`;
                         } else if (m.winning_player_uuid === p1.uuid) {
-                            chip = `<span class="badge win">${esc(p1.name)} wins</span>`;
+                            chip = `<span class="badge h2h-win-p1">${esc(p1.name)} wins</span>`;
                         } else {
-                            chip = `<span class="badge loss">${esc(p2.name)} wins</span>`;
+                            chip = `<span class="badge h2h-win-p2">${esc(p2.name)} wins</span>`;
                         }
 
                         return `<div class="h2h-match-row">
