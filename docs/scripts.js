@@ -26,6 +26,24 @@
             }
 
             // ═══════════════════════════════════════════════════════════
+            //  Set championship scope
+            // ═══════════════════════════════════════════════════════════
+            // The whole dashboard reports on set championships only. Ad-hoc series
+            // (prereleases, Card Con, …) are stored in the database but are excluded
+            // from every query here, matching the ratings pipeline, which also skips
+            // them. Any new query over competitions/matches/results must apply this
+            // to the competitions table aliased as `c`.
+            const SET_CHAMP_ONLY = 'c.set_championship_type_uuid IS NOT NULL';
+
+            // Player searches scope to players with at least one set championship
+            // result, so someone who only ever appeared at an ad-hoc event doesn't
+            // surface with an entirely empty card (no history, and no rating either).
+            const HAS_SET_CHAMP_RESULT = `EXISTS (
+                    SELECT 1 FROM competition_results cr
+                    JOIN competitions c ON c.uuid = cr.competition_uuid
+                    WHERE cr.player_uuid = players.uuid AND ${SET_CHAMP_ONLY})`;
+
+            // ═══════════════════════════════════════════════════════════
             //  Database loading
             // ═══════════════════════════════════════════════════════════
             function loadDatabase(file) {
@@ -160,7 +178,8 @@
     FROM competitions c
     LEFT JOIN venues v ON c.venue_uuid = v.ph_uuid
     LEFT JOIN players p ON p.uuid = c.winning_player_uuid
-    WHERE LOWER(c.name) LIKE ? OR LOWER(COALESCE(v.name, '')) LIKE ?
+    WHERE ${SET_CHAMP_ONLY}
+      AND (LOWER(c.name) LIKE ? OR LOWER(COALESCE(v.name, '')) LIKE ?)
     ORDER BY c.start_date ASC, c.name ASC
   `, [pattern, pattern]);
 
@@ -291,7 +310,9 @@
 
                 const pattern = `%${playerFilter.toLowerCase()}%`;
                 const rows = query(
-                    `SELECT uuid, name FROM players WHERE LOWER(name) LIKE ? ORDER BY name`,
+                    `SELECT uuid, name FROM players
+                     WHERE LOWER(name) LIKE ? AND ${HAS_SET_CHAMP_RESULT}
+                     ORDER BY name`,
                     [pattern]
                 );
 
@@ -520,7 +541,7 @@
                 // Build set type SQL clause (UUIDs are internal DB values, safe to inline)
                 const stClause = lbSetTypeFilter
                     ? `AND c.set_championship_type_uuid IN (${[...lbSetTypeFilter].map(u => `'${u}'`).join(',')})`
-                    : '';
+                    : `AND ${SET_CHAMP_ONLY}`;
 
                 // Fetch all rated players with extended stats, sorted by rating desc
                 const allRows = query(buildLeaderboardSQL(stClause));
@@ -787,7 +808,7 @@
 
                 const stClause = partSetTypeFilter
                     ? `AND c.set_championship_type_uuid IN (${[...partSetTypeFilter].map(u => `'${u}'`).join(',')})`
-                    : '';
+                    : `AND ${SET_CHAMP_ONLY}`;
 
                 // Qualifying players: attended >=1 event in the selected set(s) and meet
                 // every Min threshold, computed the same way Leaderboard's filters do.
@@ -987,7 +1008,9 @@
                 if (val.length < 2) { sugBox.style.display = 'none'; sugBox.innerHTML = ''; return; }
                 if (!db) { sugBox.style.display = 'none'; return; }
                 const matches = query(
-                    `SELECT uuid, name FROM players WHERE LOWER(name) LIKE ? ORDER BY name LIMIT 6`,
+                    `SELECT uuid, name FROM players
+                     WHERE LOWER(name) LIKE ? AND ${HAS_SET_CHAMP_RESULT}
+                     ORDER BY name LIMIT 6`,
                     [`%${val.toLowerCase()}%`]
                 );
                 if (!matches.length) { sugBox.style.display = 'none'; sugBox.innerHTML = ''; return; }
@@ -1583,6 +1606,7 @@
                     FROM competitions c
                     LEFT JOIN venues v ON v.ph_uuid = c.venue_uuid
                     WHERE c.ph_event_id IS NOT NULL
+                      AND ${SET_CHAMP_ONLY}
                       AND (LOWER(c.name) LIKE ? OR LOWER(COALESCE(v.name, '')) LIKE ? OR c.start_date LIKE ?)
                       ${trHasDisplayStatus ? "AND COALESCE(c.display_status, '') NOT IN ('canceled', 'cancelled')" : ''}
                     ORDER BY (c.start_date >= ?) DESC,
@@ -1704,7 +1728,7 @@
                     FROM competition_results cr
                     JOIN competitions c ON c.uuid = cr.competition_uuid
                     LEFT JOIN venues v ON c.venue_uuid = v.ph_uuid
-                    WHERE cr.player_uuid = ?
+                    WHERE cr.player_uuid = ? AND ${SET_CHAMP_ONLY}
                     ORDER BY c.start_date ASC`, [playerUuid]);
 
                 if (!competitions.length) {
@@ -1773,7 +1797,7 @@
                 FROM competition_results cr
                 JOIN competitions c ON c.uuid = cr.competition_uuid
                 LEFT JOIN venues v ON c.venue_uuid = v.ph_uuid
-                WHERE cr.player_uuid = ?
+                WHERE cr.player_uuid = ? AND ${SET_CHAMP_ONLY}
                 ORDER BY c.start_date ASC`, [playerUuid]);
 
                 if (!competitions.length) {
@@ -1793,7 +1817,7 @@
                         FROM player_rating_history h
                         JOIN competitions c ON c.uuid = h.competition_uuid
                         LEFT JOIN venues v ON c.venue_uuid = v.ph_uuid
-                        WHERE h.player_uuid = ?
+                        WHERE h.player_uuid = ? AND ${SET_CHAMP_ONLY}
                         ORDER BY h.date ASC`, [playerUuid]);
 
                     if (hist.length >= 2) {
@@ -1891,7 +1915,9 @@
                     const val = this.value.trim();
                     if (val.length < 2 || !db) { sug.style.display = 'none'; sug.innerHTML = ''; return; }
                     const rows = query(
-                        `SELECT uuid, name FROM players WHERE LOWER(name) LIKE ? ORDER BY name LIMIT 6`,
+                        `SELECT uuid, name FROM players
+                     WHERE LOWER(name) LIKE ? AND ${HAS_SET_CHAMP_RESULT}
+                     ORDER BY name LIMIT 6`,
                         [`%${val.toLowerCase()}%`]
                     );
                     if (!rows.length) { sug.style.display = 'none'; sug.innerHTML = ''; return; }
@@ -1940,8 +1966,9 @@
                     JOIN rounds r ON r.uuid = m.round_uuid
                     JOIN competitions c ON c.uuid = m.competition_uuid
                     LEFT JOIN venues v ON v.ph_uuid = c.venue_uuid
-                    WHERE (m.player_a_uuid = ? AND m.player_b_uuid = ?)
-                       OR (m.player_a_uuid = ? AND m.player_b_uuid = ?)
+                    WHERE ${SET_CHAMP_ONLY}
+                      AND ((m.player_a_uuid = ? AND m.player_b_uuid = ?)
+                        OR (m.player_a_uuid = ? AND m.player_b_uuid = ?))
                     ORDER BY c.start_date ASC, c.uuid ASC
                 `, [p1.uuid, p2.uuid, p2.uuid, p1.uuid]);
 
