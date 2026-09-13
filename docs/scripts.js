@@ -35,14 +35,6 @@
             // to the competitions table aliased as `c`.
             const SET_CHAMP_ONLY = 'c.set_championship_type_uuid IS NOT NULL';
 
-            // Player searches scope to players with at least one set championship
-            // result, so someone who only ever appeared at an ad-hoc event doesn't
-            // surface with an entirely empty card (no history, and no rating either).
-            const HAS_SET_CHAMP_RESULT = `EXISTS (
-                    SELECT 1 FROM competition_results cr
-                    JOIN competitions c ON c.uuid = cr.competition_uuid
-                    WHERE cr.player_uuid = players.uuid AND ${SET_CHAMP_ONLY})`;
-
             // ═══════════════════════════════════════════════════════════
             //  Database loading
             // ═══════════════════════════════════════════════════════════
@@ -310,9 +302,7 @@
 
                 const pattern = `%${playerFilter.toLowerCase()}%`;
                 const rows = query(
-                    `SELECT uuid, name FROM players
-                     WHERE LOWER(name) LIKE ? AND ${HAS_SET_CHAMP_RESULT}
-                     ORDER BY name`,
+                    `SELECT uuid, name FROM players WHERE LOWER(name) LIKE ? ORDER BY name`,
                     [pattern]
                 );
 
@@ -1008,9 +998,7 @@
                 if (val.length < 2) { sugBox.style.display = 'none'; sugBox.innerHTML = ''; return; }
                 if (!db) { sugBox.style.display = 'none'; return; }
                 const matches = query(
-                    `SELECT uuid, name FROM players
-                     WHERE LOWER(name) LIKE ? AND ${HAS_SET_CHAMP_RESULT}
-                     ORDER BY name LIMIT 6`,
+                    `SELECT uuid, name FROM players WHERE LOWER(name) LIKE ? ORDER BY name LIMIT 6`,
                     [`%${val.toLowerCase()}%`]
                 );
                 if (!matches.length) { sugBox.style.display = 'none'; sugBox.innerHTML = ''; return; }
@@ -1732,7 +1720,7 @@
                     ORDER BY c.start_date ASC`, [playerUuid]);
 
                 if (!competitions.length) {
-                    lines.push('  (no competition results recorded)');
+                    lines.push('  (no set championship results recorded)');
                     lines.push('');
                     return lines.join('\n');
                 }
@@ -1801,7 +1789,7 @@
                 ORDER BY c.start_date ASC`, [playerUuid]);
 
                 if (!competitions.length) {
-                    bodyEl.innerHTML = '<div class="empty">No competition history</div>';
+                    bodyEl.innerHTML = '<div class="empty">No set championship history</div>';
                     return;
                 }
 
@@ -1915,9 +1903,7 @@
                     const val = this.value.trim();
                     if (val.length < 2 || !db) { sug.style.display = 'none'; sug.innerHTML = ''; return; }
                     const rows = query(
-                        `SELECT uuid, name FROM players
-                     WHERE LOWER(name) LIKE ? AND ${HAS_SET_CHAMP_RESULT}
-                     ORDER BY name LIMIT 6`,
+                        `SELECT uuid, name FROM players WHERE LOWER(name) LIKE ? ORDER BY name LIMIT 6`,
                         [`%${val.toLowerCase()}%`]
                     );
                     if (!rows.length) { sug.style.display = 'none'; sug.innerHTML = ''; return; }
